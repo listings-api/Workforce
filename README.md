@@ -212,7 +212,7 @@ Your repository's own git hooks keep running as usual. Commits you make yourself
 - **Both reviewers are read-only.** The Claude reviewer can only read files. Codex runs read-only, with its browser and computer-control add-ons switched off. Codex can't commit even in write mode, because its sandbox blocks the `.git` folder.
 - **Needs both reviews:** new commits of any kind, including a cherry-pick or revert (use `git cherry-pick -n`, review, then commit), and pointing a branch at a commit that isn't on it or on a remote branch (`git reset <commit>`, `git branch -f`, `git checkout -B`).
 - **Always refused:** force-push, `rebase`, `git stash`, `git commit --amend` (make a new commit instead), `commit-tree`, `update-ref`, and `git reset --hard` on `main`/`master`.
-- **Also always refused, for every tool:** reading credential files (`~/.ssh`, `~/.gnupg`, the Claude and Codex login files, the keychain), and deleting or writing files outside the project folder. Writing to a temp folder is fine; a recursive delete (`rm -rf`) works only inside the project. If a task genuinely needs such a step, you do it by hand.
+- **Also always refused, for every tool:** reading credential files (`~/.ssh`, `~/.gnupg`, the Claude and Codex login files, the keychain), and deleting or writing files outside the project folder. Writing to a temp folder is fine; a recursive delete (`rm -rf`) works only inside the project. If a task genuinely needs to write elsewhere, type `/wf-allow-outside`: for the rest of that session Claude may write and delete outside the project, while credential files stay off limits and deleting the whole disk or your home folder is still refused. Type it again to turn it off. Only you can type it.
 
 **Known limits.** The checks read commands and files as text, so obfuscated or downloaded code, or a program that talks to git's files directly, can get past them. Approvals are signed with a key in `~/.workforce/team.key`, but that key belongs to your user account like everything else, so the signature stops accidental or casual edits, not a determined agent. If you need a hard guarantee, protect your branches on the server too (required reviews on GitHub or GitLab).
 
@@ -260,6 +260,7 @@ The status line shows your Claude 5-hour and weekly usage, and Codex's usage.
 | `/wf-settings` | Every setting in one view |
 | `/wf-continue` | Carry on past a 60% stop until that window resets |
 | `/wf-review-again` | Allow more review rounds after a reviewer rejected the changes 3 times in a row |
+| `/wf-allow-outside` | Let Claude write outside the project folder for this session; type again to turn it off |
 | `wf codex` (in a terminal) | Open the team's Codex conversation in Codex's own app |
 
 The plugin commands also work with a prefix, for example `/workforce:codex-model`, if a name clashes with another plugin.

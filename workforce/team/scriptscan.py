@@ -45,6 +45,7 @@ BYPASS_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"team\.key", "touches the approvals key"),
         (r"wf-approvals", "touches the signed approvals file"),
         (r"review-again", "touches the marker that only the user's /wf-review-again may write"),
+        (r"allow-outside", "touches the marker that only the user's /wf-allow-outside may write"),
         (r"workforce\.team(?:\.|import\(?)approvals|team\.approvals|approvals\.record|load_key", "uses the approvals module directly"),
         (r"reference-transaction", "hooks or bypasses git's ref updates"),
     )

@@ -27,6 +27,8 @@ EVENTS = ("pretooluse", "userpromptsubmit")
 CONTINUE_COMMANDS = ("/wf-continue", "/workforce:wf-continue")
 REVIEW_AGAIN_COMMANDS = ("/wf-review-again", "/workforce:wf-review-again")
 REVIEW_AGAIN_FILE = "review-again.json"
+ALLOW_OUTSIDE_COMMANDS = ("/wf-allow-outside", "/workforce:wf-allow-outside")
+ALLOW_OUTSIDE_FILE = "allow-outside.json"
 REVIEWERS = (("claude", "the Claude reviewer (claude_review)"), ("codex", "Codex (codex_review)"))
 _GIT_WORD = re.compile(r"git|gpg|\bgh\b", re.I)
 MAX_OVERRIDES = 8
@@ -87,17 +89,57 @@ def _project_dir(payload: Mapping[str, Any], env: Mapping[str, str]) -> str:
     return root if isinstance(root, str) and root else _cwd(payload, env)
 
 
+def _outside_allowed(project: str, session_id: Any) -> bool:
+    """True when the user typed /wf-allow-outside in this very session (the marker names the session it was typed in)."""
+    from workforce.team import relay
+
+    if not isinstance(session_id, str) or not session_id:
+        return False
+    try:
+        marker = json.loads((relay.team_dir(project) / ALLOW_OUTSIDE_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(marker, dict) and marker.get("session_id") == session_id
+
+
+def _toggle_allow_outside(project: str, session_id: Any, home: Path | None) -> str:
+    """Turn writing outside the project on or off for this session; only the user's typed command reaches here."""
+    from workforce.team import config, relay
+
+    if not isinstance(session_id, str) or not session_id:
+        return "WorkForce cannot tell which session this is, so /wf-allow-outside was not applied. Tell the user."
+    try:
+        marker = relay.ensure_team_dir(project) / ALLOW_OUTSIDE_FILE
+        if _outside_allowed(project, session_id):
+            marker.unlink()
+            return "WorkForce: writing outside the project folder is off again (/wf-allow-outside). Tell the user in one line."
+        config.atomic_write(marker, json.dumps({"session_id": session_id, "at": time.time()}))
+    except OSError as exc:
+        _log_exception(home, "userpromptsubmit:allow-outside", exc)
+        return f"WorkForce could not record /wf-allow-outside ({exc}). Tell the user."
+    return (
+        "WorkForce: the user allowed writing outside the project folder for this session (/wf-allow-outside). Credential "
+        "files stay off limits. Tell the user in one line; typing /wf-allow-outside again turns it off."
+    )
+
+
 def _denylist(tool_name: str, tool_input: Mapping[str, Any], payload: Mapping[str, Any], env: Mapping[str, str]) -> dict[str, Any] | None:
     """The hard deny-list: no credential reads, no writes outside the project folder or a temp folder, no force-push or signing bypass."""
     from workforce.team import denylist
 
     project = _project_dir(payload, env)
-    reason = denylist.denylist_reason(tool_name, tool_input, _cwd(payload, env), project, Path.home(), mode=denylist.MODE_COMMITTER)
+    allow_outside = _outside_allowed(project, payload.get("session_id"))
+    reason = denylist.denylist_reason(
+        tool_name, tool_input, _cwd(payload, env), project, Path.home(), mode=denylist.MODE_COMMITTER, allow_outside=allow_outside
+    )
     if not reason:
         return None
+    if allow_outside:
+        return _deny(f"WorkForce blocked this: {reason}. Even with /wf-allow-outside, credential files and a delete of the whole disk or home folder stay off limits.")
     return _deny(
         f"WorkForce blocked this: {reason}. Claude never reads credential files, and changes files only inside the "
-        f"project folder ({project}) or a temp folder. If this step is needed, the user does it by hand."
+        f"project folder ({project}) or a temp folder. If this step is needed, the user does it by hand, or types "
+        "/wf-allow-outside to allow writes outside the project for this session."
     )
 
 
@@ -234,6 +276,8 @@ def _protect_tool(tool_name: str, tool_input: Mapping[str, Any], home: Path | No
             )
         if tool_name in WRITE_TOOLS and os.path.basename(resolved).startswith(REVIEW_AGAIN_FILE):
             return _deny("WorkForce blocked this: only the user can allow more review rounds, by typing /wf-review-again.")
+        if tool_name in WRITE_TOOLS and os.path.basename(resolved).startswith(ALLOW_OUTSIDE_FILE):
+            return _deny("WorkForce blocked this: only the user can allow writing outside the project, by typing /wf-allow-outside.")
         if tool_name in WRITE_TOOLS and os.path.basename(resolved).startswith("plan-reviews.json"):
             return _deny("WorkForce blocked this: plan-reviews.json is written only by the WorkForce server (codex_plan_review), never by the agent.")
         if tool_name in WRITE_TOOLS and os.path.basename(resolved) == "REVIEW-LOG.md" and "/plans/" in resolved.replace(os.sep, "/"):
@@ -492,8 +536,11 @@ def evaluate(
     env = os.environ if env is None else env
     if event == "userpromptsubmit":
         prompt = payload.get("prompt")
-        if isinstance(prompt, str) and prompt.strip().split(None, 1)[:1] and prompt.strip().split(None, 1)[0] in REVIEW_AGAIN_COMMANDS:
+        first = prompt.strip().split(None, 1)[0] if isinstance(prompt, str) and prompt.strip() else ""
+        if first in REVIEW_AGAIN_COMMANDS:
             return _context(_allow_more_reviews(_cwd(payload, env), home))
+        if first in ALLOW_OUTSIDE_COMMANDS:
+            return _context(_toggle_allow_outside(_project_dir(payload, env), payload.get("session_id"), home))
         direct = _direct_codex(payload, env, home, now)
         if direct:
             return direct

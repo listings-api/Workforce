@@ -361,3 +361,75 @@ def test_the_project_folder_is_where_claude_code_started_even_after_a_cd(home):
     assert hooks.evaluate("pretooluse", inside, env=env, home=home, now=NOW) is None
     outside = {"tool_name": "Write", "tool_input": {"file_path": "/opt/elsewhere/x.txt", "content": "x"}, "cwd": "/opt/wf-project/sub"}
     assert "outside" in denied(hooks.evaluate("pretooluse", outside, env=env, home=home, now=NOW))
+
+
+# ------------------------------------------------------------------ /wf-allow-outside
+
+
+def user_types(text, cwd, home, session="s1"):
+    payload = {"prompt": text, "cwd": str(cwd), "session_id": session}
+    return hooks.evaluate("userpromptsubmit", payload, env={"CLAUDE_PROJECT_DIR": str(cwd)}, home=home, now=NOW)
+
+
+def tool_call(tool_name, tool_input, cwd, home, session="s1"):
+    payload = {"tool_name": tool_name, "tool_input": tool_input, "cwd": str(cwd), "session_id": session}
+    return hooks.evaluate("pretooluse", payload, env={"CLAUDE_PROJECT_DIR": str(cwd)}, home=home, now=NOW)
+
+
+OUTSIDE_WRITE = ("Write", {"file_path": "/opt/wf-outside/notes.txt", "content": "x"})
+
+
+def test_the_user_can_allow_writes_outside_the_project_for_this_session(git_repo, home):
+    assert "outside" in denied(tool_call(*OUTSIDE_WRITE, git_repo, home))
+    context = user_types("/wf-allow-outside", git_repo, home)["hookSpecificOutput"]["additionalContext"]
+    assert "allowed writing outside the project folder" in context and "Credential files stay off limits" in context
+    assert tool_call(*OUTSIDE_WRITE, git_repo, home) is None
+    assert tool_call("Bash", {"command": "echo x > /opt/wf-outside/notes.txt"}, git_repo, home) is None
+    assert tool_call("Bash", {"command": "rm -rf /opt/wf-outside"}, git_repo, home) is None
+    assert tool_call("Bash", {"command": "cp README.md /opt/wf-outside/"}, git_repo, home) is None
+
+
+def test_the_permission_is_bound_to_the_session_that_typed_it(git_repo, home):
+    user_types("/wf-allow-outside", git_repo, home, session="s1")
+    assert tool_call(*OUTSIDE_WRITE, git_repo, home, session="s2") is not None
+    assert tool_call(*OUTSIDE_WRITE, git_repo, home, session=None) is not None
+    assert tool_call(*OUTSIDE_WRITE, git_repo, home, session="s1") is None
+
+
+def test_credential_files_and_the_whole_disk_stay_off_limits(git_repo, home):
+    user_types("/wf-allow-outside", git_repo, home)
+    assert "auth.json" in denied(tool_call("Bash", {"command": "cat ~/.codex/auth.json"}, git_repo, home))
+    assert "credentials" in denied(tool_call("Read", {"file_path": "~/.claude/.credentials.json"}, git_repo, home))
+    assert "force" in denied(tool_call("Bash", {"command": "git push --force origin main"}, git_repo, home))
+    for command in ("rm -rf /", "rm -rf ~", "rm -rf /*"):
+        reason = denied(tool_call("Bash", {"command": command}, git_repo, home))
+        assert "whole disk or your home folder" in reason and "Even with /wf-allow-outside" in reason, command
+
+
+def test_typing_it_again_turns_it_off(git_repo, home):
+    user_types("/wf-allow-outside", git_repo, home)
+    assert "off again" in user_types("/workforce:wf-allow-outside", git_repo, home)["hookSpecificOutput"]["additionalContext"]
+    assert "outside" in denied(tool_call(*OUTSIDE_WRITE, git_repo, home))
+
+
+def test_without_a_session_id_nothing_is_recorded(git_repo, home):
+    context = user_types("/wf-allow-outside", git_repo, home, session=None)["hookSpecificOutput"]["additionalContext"]
+    assert "cannot tell which session" in context
+    assert not (git_repo / ".workforce" / "team" / "allow-outside.json").exists()
+
+
+def test_claude_cannot_write_the_marker_itself(git_repo, home):
+    marker = git_repo / ".workforce" / "team" / "allow-outside.json"
+    for tool_name, tool_input in (("Write", {"file_path": str(marker), "content": "{}"}), ("Edit", {"file_path": str(marker), "old_string": "a", "new_string": "b"})):
+        assert "/wf-allow-outside" in denied(tool_call(tool_name, tool_input, git_repo, home))
+    for command in ("echo '{\"session_id\": \"s1\"}' > .workforce/team/allow-outside.json", "touch .workforce/team/allow-outside.json"):
+        assert "/wf-allow-outside" in denied(tool_call("Bash", {"command": command}, git_repo, home))
+    script = git_repo / "grant.py"
+    assert "allow-outside" in denied(tool_call("Write", {"file_path": str(script), "content": "open('.workforce/team/allow-outside.json', 'w').write('{}')\n"}, git_repo, home))
+
+
+def test_the_plugin_has_the_command():
+    from workforce.team import plugin_runtime
+
+    text = (plugin_runtime.source_dir() / "commands" / "wf-allow-outside.md").read_text()
+    assert "turned writing outside the project folder on or off" in text

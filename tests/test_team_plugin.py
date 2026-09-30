@@ -116,7 +116,7 @@ def test_every_referenced_mcp_tool_exists_on_the_server(PLUGIN):
     referenced = set()
     for name, text in plugin_texts(PLUGIN).items():
         found = set(TOOL_PATTERN.findall(text))
-        assert found or name in {"wf-continue.md", "fast-coder.md"}, f"{name} references no MCP tool"
+        assert found or name in {"wf-continue.md", "wf-allow-outside.md", "fast-coder.md"}, f"{name} references no MCP tool"
         referenced |= found
     assert referenced
     assert referenced <= TOOL_NAMES, referenced - TOOL_NAMES

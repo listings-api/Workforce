@@ -451,3 +451,27 @@ def test_global_git_hooks_and_signing_do_not_run_in_tests(tmp_path):
     done = subprocess.run(["git", "-C", str(repo), "commit", "-m", "x"], capture_output=True, text=True, env=env)
     assert done.returncode == 0, done.stderr
     assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["echo x > /opt/elsewhere/notes.txt", "rm -rf /opt/elsewhere", "cp README.md /opt/elsewhere/", "mkdir -p ~/new-folder", "find /opt/elsewhere -name '*.log' -delete"],
+)
+def test_allow_outside_lets_writes_and_deletes_outside_the_worktree_through(command):
+    assert denylist.denylist_reason("Bash", {"command": command}, WORKTREE, WORKTREE, HOME) is not None
+    assert denylist.denylist_reason("Bash", {"command": command}, WORKTREE, WORKTREE, HOME, allow_outside=True) is None
+
+
+@pytest.mark.parametrize(
+    "command, needle",
+    [("rm -rf /", "whole disk"), ("rm -rf ~", "home folder"), ("rm -rf /Users/tester", "home folder"), ("cat ~/.ssh/id_rsa", "ssh"), ("git push --force", "force"), ("git commit --no-gpg-sign -m x", "signing")],
+)
+def test_allow_outside_keeps_the_floor_the_credential_rules_and_the_git_rules(command, needle):
+    assert needle in denylist.denylist_reason("Bash", {"command": command}, WORKTREE, WORKTREE, HOME, allow_outside=True)
+
+
+def test_allow_outside_applies_to_file_tools_too():
+    outside = {"file_path": "/opt/elsewhere/notes.txt", "content": "x"}
+    assert "outside" in denylist.denylist_reason("Write", outside, WORKTREE, WORKTREE, HOME)
+    assert denylist.denylist_reason("Write", outside, WORKTREE, WORKTREE, HOME, allow_outside=True) is None
+    assert "ssh" in denylist.denylist_reason("Read", {"file_path": "~/.ssh/id_rsa"}, WORKTREE, WORKTREE, HOME, allow_outside=True)
