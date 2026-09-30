@@ -39,10 +39,9 @@ Implement the MCP stdio protocol by hand: `initialize`, `tools/list`, `tools/cal
 | `claude_review` | repo?, focus?, base? | The server runs a fresh headless Claude reviewer (plan mode, read-only, `reviewer_model`) and records its signed verdict itself (replaced an earlier self-reported `record_claude_review`). |
 | `review_status` | none | For the current tree: both verdicts, whether commit is allowed, and what's missing. |
 | `usage` | none | Claude 5h/weekly (from the statusline cache) plus Codex windows (app-server, cached 120s), with alert/stop state. |
-| `laya` | question, options?, context | Local Laya decision (existing `LayaDecider`, `laya:en`) → answer + confidence, or "unavailable/unsure". Hints only. |
 | `codex_settings` | model?, effort? | Get/set the Codex default model/effort (persisted in `~/.workforce/team.toml`). Defaults: `gpt-6-sol` / `high`. |
 
-- Reuse the existing modules: `agents.codex.CodexRunner` (keeps env scrubbing and the subscription checks), `git_ops`, `usage.codex_limits`, `decider.laya`, `schemas.VERDICT`.
+- Reuse the existing modules: `agents.codex.CodexRunner` (keeps env scrubbing and the subscription checks), `git_ops`, `usage.codex_limits`, `schemas.VERDICT`.
 - Codex reviews/plans always run read-only.
 - Tool errors come back as MCP `isError` results with a clear message, never a crash.
 - Log every call to `~/.workforce/team.log` (JSONL, prompt text truncated, secrets redacted via `guard.redact`).
@@ -66,15 +65,14 @@ Implement the MCP stdio protocol by hand: `initialize`, `tools/list`, `tools/cal
   - `/plan <task>` (`codex_plan`)
   - `/wf-continue` (override the 60% stop for the current usage window)
 - `hooks/hooks.json` → `<venv python> -m workforce.team.hooks <event>`:
-  - **PreToolUse `Bash`:** if the command runs `git commit` (any form, including `-C`, chained with `&&`/`;`), check `approvals.status`. If not both APPROVE for the current tree → deny with the reason ("run /review: Claude reviewer + Codex must both approve these exact changes; missing: …"). Also always deny `--no-gpg-sign`, `commit.gpgsign=false` and `git push --force` (reuse the deny-list from `decider/hooks.py`).
+  - **PreToolUse `Bash`:** if the command runs `git commit` (any form, including `-C`, chained with `&&`/`;`), check `approvals.status`. If not both APPROVE for the current tree → deny with the reason ("run /review: Claude reviewer + Codex must both approve these exact changes; missing: …"). Also always deny `--no-gpg-sign`, `commit.gpgsign=false` and `git push --force` (reuse the deny-list from `team/denylist.py`).
   - **UserPromptSubmit** and **PreToolUse `*`:** read the usage cache. At ≥ 60% on any window, block, with a reason naming the window and the reset time, unless a `/wf-continue` override exists for that window's reset time. At ≥ 50%, don't block: for UserPromptSubmit, add the context "usage alert: …" so Claude mentions it.
 - `TEAM.md` (appended system prompt), short and firm:
   1. For any non-trivial task, first call `codex_plan` (Codex plans and researches), and debate disagreements briefly with `codex_ask`. If you still disagree after 2 rounds, ask the user (AskUserQuestion) with both positions.
   2. Claude writes the code. Delegate small, mechanical sub-tasks to the `fast-coder` sub-agent (Sonnet 5.5). Keep hard or cross-cutting work yourself.
   3. Before any commit, run both reviews: `claude_review` and `codex_review`. Fix REQUEST_CHANGES and re-review. If they disagree after 2 rounds, ask the user. The commit hook enforces this.
   4. Follow the user's git instructions exactly (branch names, pulling, where to commit). Never force-push, never bypass signing, and don't push unless asked.
-  5. Use `laya` only for quick yes/no or pick-one hints, never for approvals or model choice.
-  6. The user picks models: don't change the Codex model/effort unless the user asks (`/codex-model`).
+  5. The user picks models: don't change the Codex model/effort unless the user asks (`/codex-model`).
 
 ### 2e. Status line (`workforce/team/statusline.py`)
 - Reads Claude Code's stdin JSON: `rate_limits.five_hour.used_percentage`, `.resets_at`, `rate_limits.seven_day.*`, `model.display_name`, `workspace.current_dir`.

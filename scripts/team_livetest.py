@@ -37,7 +37,6 @@ TOOL_NAMES = [
     "claude_review",
     "review_status",
     "usage",
-    "laya",
     "codex_settings",
 ]
 PLUGIN_PREFIX = "mcp__plugin_workforce_codex__"
@@ -307,7 +306,7 @@ def deny_evidence(stream: str) -> str | None:
 # ------------------------------------------------------------------ the checks
 
 
-@check("1. plugin loads (claude -p lists the 8 MCP tools)")
+@check("1. plugin loads (claude -p lists the 7 MCP tools)")
 def check_plugin_loads(repo: Path):
     if not (PLUGIN / ".claude-plugin" / "plugin.json").is_file():
         raise Skip(".claude-plugin/plugin.json is missing from the prepared plugin")
@@ -326,7 +325,7 @@ def check_plugin_loads(repo: Path):
     missing = [t for t in TOOL_NAMES if PLUGIN_PREFIX + t not in text]
     if missing:
         return False, f"missing {missing}; claude said: {text.strip()[:400]}"
-    return True, f"all 8 tools listed: {', '.join(PLUGIN_PREFIX + t for t in TOOL_NAMES[:2])}, …"
+    return True, f"all 7 tools listed: {', '.join(PLUGIN_PREFIX + t for t in TOOL_NAMES[:2])}, …"
 
 
 @check("2. MCP server alone (initialize + tools/list)")

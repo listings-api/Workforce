@@ -5,19 +5,16 @@ Fakes only: the fake codex, tmp homes and tmp projects. The real claude/codex ar
 
 import io
 import json
-import os
 import re
 import subprocess
-import sys
 import threading
 from pathlib import Path
 
 import pytest
 
-from tests.test_decider import FakeOllaya
 from tests.test_team_launch import run as launch_run
 from tests.test_team_launch import setup as launch_setup  # noqa: F401  (fixture)
-from tests.test_team_mcp import FAKE, ROOT, env, finding, ollaya, verdict  # noqa: F401  (fixtures + helpers)
+from tests.test_team_mcp import FAKE, ROOT, env, finding, verdict  # noqa: F401  (fixtures + helpers)
 from workforce.errors import ConfigError
 from workforce.team import agents_gen, approvals, config, hooks, launch, plugin_runtime, relay, usage_cache
 
@@ -535,9 +532,7 @@ def test_wf_with_a_task_that_starts_with_another_word_still_goes_to_claude(launc
 # ------------------------------------------------------------------ /wf-settings
 
 
-def test_settings_shows_everything_with_the_command_to_change_each(env, ollaya):
-    ollaya.choose = "yes"
-    env.extra_env["WF_LAYA_URL"] = ollaya.url
+def test_settings_shows_everything_with_the_command_to_change_each(env):
     config.set_team_models("claude-opus-5-5", "max", None, None, env.home)
     config.set_codex_mode("write", env.home)
     usage_cache.write_claude(
@@ -553,15 +548,13 @@ def test_settings_shows_everything_with_the_command_to_change_each(env, ollaya):
     assert "/claude-model" in text and "/claude-effort" in text
     assert "alert at 50% · stop at 60%" in text and "alert_percent" in text and "/wf-continue" in text
     assert "23" in text and "44" in text  # current usage
-    assert f"running at {ollaya.url}" in text
     assert "/usage" in text
 
 
-def test_settings_reports_laya_down_and_read_only_mode(env):
-    env.extra_env["WF_LAYA_URL"] = "http://127.0.0.1:1"
+def test_settings_reports_read_only_mode(env):
     client = env.start()
     text = client.text("settings")
-    assert "mode read-only (Codex only reads" in text and "not running at http://127.0.0.1:1" in text
+    assert "mode read-only (Codex only reads" in text
     assert "Usage now" in text
 
 

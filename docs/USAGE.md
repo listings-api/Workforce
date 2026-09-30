@@ -1,6 +1,6 @@
 # WorkForce: usage guide
 
-This guide covers `wf` in detail: how the team works, every slash command, talking to Codex word for word, the settings, the usage limits and Laya. For install and a quick start, see the [README](../README.md).
+This guide covers `wf` in detail: how the team works, every slash command, talking to Codex word for word, the settings and the usage limits. For install and a quick start, see the [README](../README.md).
 
 WorkForce only runs as a chat. `wf -p` / `wf --print`, and the unattended `wf run` pipeline of earlier versions, were removed.
 
@@ -29,7 +29,7 @@ Everything else is Claude Code as you know it: the same input box, permissions, 
    **The commit hook** blocks `git commit`, `merge --continue`, `am` and staged merges/cherry-picks/reverts in any form (`git -C x commit`, `a && git commit`, `env … git commit`, `bash -c '…'`, aliases, `GIT_DIR=…`) until both approve the tree that would be committed. That is the staged tree for a plain `git commit`, and the whole working state for `git add -A && git commit …` or `git commit -a`. `git commit <paths>` is denied: stage, then commit. A merge, cherry-pick or revert of existing commits with nothing staged (`git merge origin/master`, `git pull`) needs no review; if it stops on conflicts, the resolution commit is gated. `git reset <commit>`, `git branch -f`, `git checkout -B` and `git switch -C` may point a branch at a commit that is already on the current branch or on a remote branch; any other commit needs both approvals of its files first (review it with `git checkout --detach <sha>` and /review). `git reset --hard` on or to `main`/`master` stays blocked. Commands it can't parse are denied. `rebase`, `commit-tree`, `update-ref`, `filter-branch`, `replace`, creating a `git stash`, and `gh api` writes to refs or commits are refused. In a folder of several repos, pass `repo` to the review tools; approvals are per repo.
 4. Force-push is always denied. Claude follows your git instructions; it does not push unless you ask.
 5. Approvals record the commit the reviewers compared against; only a review against the current HEAD allows a commit. A command that changes files and then commits in one go is refused, and inside `wf` git runs a WorkForce pre-commit check that compares the exact committed files with the approvals before handing over to your repository's own hooks.
-5. Laya gives yes/no hints only. You pick the models.
+6. You pick the models.
 
 ### Slash commands
 
@@ -45,7 +45,7 @@ Everything else is Claude Code as you know it: the same input box, permissions, 
 | `/wf-review-again` | After a reviewer rejected the changes 3 times in a row, the review tools stop and Claude asks you what to do. This allows more rounds. Only you can type it. |
 | `/codex-mode [read-only\|write]` | Shows or sets Codex's mode (below). Default `read-only`. |
 | `/claude-model`, `/claude-effort` | A menu for the team's other Claudes: the reviewer behind `claude_review` (applies at the next review) and the `fast-coder` sub-agent (applies the next time `wf` starts). Defaults: `claude-opus-5-5` / `claude-sonnet-5-5`, both `high`. Or give them directly: `/claude-model reviewer claude-opus-5-5 high`. This chat's own Claude is `/model`. |
-| `/wf-settings` | One view of every setting, current usage and the Laya status, with the command that changes each. Shown exactly as the tool returns it. |
+| `/wf-settings` | One view of every setting and current usage, with the command that changes each. Shown exactly as the tool returns it. |
 
 ### Talking to Codex word for word
 
@@ -78,40 +78,6 @@ The status line saves Claude's 5-hour and weekly percentages to `~/.workforce/us
 | `<repo>/.git/wf-approvals.json` | The review verdicts by tree hash (in the git common dir, so worktrees share it; never committed). |
 
 The plugin's hooks and Codex server run with the same Python as `wf` itself, wherever it was installed. `wf doctor` checks the whole setup. `wf --help` and `wf --version` are Claude's.
-
-## Laya (optional)
-
-Laya is a small open-weights decision model (about 850 MB) that runs on your machine through a local server called Ollaya. The team uses it only for quick yes/no hints (the `laya` tool), never for approvals or model choice. Everything works without it; `wf doctor` shows whether it is running.
-
-```sh
-curl -fsSL https://ollaya.dev/install.sh -o install.sh    # read it before you run it
-OLLAYA_INSTALL_DIR=$HOME/.local sh install.sh
-~/.local/bin/ollaya pull laya:en                          # about 850 MB
-```
-
-Start it:
-
-```sh
-OLLAYA_HOST=127.0.0.1:11435 OLLAYA_KEEP_ALIVE=-1 nohup ~/.local/bin/ollaya serve > /dev/null 2>&1 &
-```
-
-`OLLAYA_KEEP_ALIVE=-1` keeps the model loaded. Without it the model unloads after 5 minutes idle, and the first request after that can be slow enough to time out (2 seconds) and fall back to "unsure" once.
-
-Check it is up:
-
-```sh
-curl http://127.0.0.1:11435/            # prints: Ollaya is running
-curl http://127.0.0.1:11435/v1/models   # should list laya:en
-```
-
-Stop it:
-
-```sh
-pkill -f "ollaya serve"        # stop the server
-~/.local/bin/ollaya stop laya:en   # or just unload the model
-```
-
-WorkForce does not start or stop Ollaya for you. Set `WF_LAYA_URL` to use another address.
 
 ## Troubleshooting
 

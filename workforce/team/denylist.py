@@ -1,4 +1,8 @@
-"""PreToolUse risk-gate hook for Claude and Codex: `python -m workforce.decider.hooks claude|codex`."""
+"""The hard deny-list for tool calls, and the shell-command parsing behind it.
+
+It refuses reads of credentials, writes outside the project, force-pushes, signing bypasses and history rewrites. The team's
+hooks and the commit gate build on the parsing helpers here.
+"""
 
 import fnmatch
 import json
@@ -7,28 +11,13 @@ import re
 import shlex
 import subprocess
 import sys
-import tomllib
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence, TextIO
+from typing import Any, Mapping, Sequence
 
-import workforce
-from workforce import config as wf_config
-from workforce.decider import questions
-from workforce.decider.base import Decider, NullDecider
-from workforce.decider.laya import build_decider, can_answer, confident
-from workforce.errors import ConfigError
-from workforce.events import EventLog
-from workforce.paths import INTEGRATION_DIR, Paths
 
-AGENTS = ("claude", "codex")
-HOOK_TIMEOUT_S = 30
 PROTECTED_BRANCHES = ("main", "master")
-MODE_ENV = "WF_HOOK_MODE"
 MODE_AGENT = "agent"
 MODE_COMMITTER = "committer"
-MODE_DENYLIST_ONLY = "denylist"
-MODES = (MODE_AGENT, MODE_COMMITTER)
 
 READ_ONLY_TOOLS = frozenset(
     {"Read", "Glob", "Grep", "LS", "NotebookRead", "TodoRead", "TodoWrite", "ToolSearch", "WebSearch", "WebFetch"}
@@ -118,15 +107,6 @@ _NO_GPG = re.compile(r"--no-gpg-sign|commit\.gpgsign\W{0,3}(?:false|0|no|off)\b"
 _GIT_ENV = re.compile(r"(?<![\w])GIT_CONFIG(?:_[A-Z0-9_]+)?(?![\w])")
 _GIT_CONFIG_DENY = re.compile(r"^(?:gpg\..*|(?:commit|tag)\.gpgsign|user\.signingkey|alias\..*|core\.hookspath)$")
 _GIT_CONFIG_READS = frozenset({"--get", "--get-all", "--get-regexp", "--list", "-l", "--show-origin", "--show-scope"})
-
-
-@dataclass
-class Verdict:
-    allow: bool
-    stage: str
-    reason: str
-    action: str | None = None
-    extra: dict[str, Any] = field(default_factory=dict)
 
 
 def _tokenize(command: str) -> list[str]:
@@ -750,7 +730,7 @@ def denylist_reason(
     home: Path | None = None,
     mode: str = MODE_COMMITTER,
 ) -> str | None:
-    """Why the hard deny-list blocks this call, or None. Runs before Laya and cannot be overridden.
+    """Why the hard deny-list blocks this call, or None. It cannot be overridden.
 
     In `agent` mode the list also refuses every git command that commits, publishes or rewrites history.
     """
@@ -828,343 +808,6 @@ def _segment_read_only(segment: Sequence[str]) -> bool:
     if name == "sed":
         return not any(arg == "--in-place" or re.fullmatch(r"-[A-Za-z]*i[A-Za-z]*", arg) or arg.startswith("-i") for arg in args)
     return True
-
-
-def _risk_gate_trusted(decider: Decider) -> bool:
-    """Whether Laya should be asked about `risk_gate`: the key has a threshold and the server is available."""
-    threshold_for = getattr(decider, "threshold_for", None)
-    if threshold_for is not None and threshold_for("risk_gate") is None:
-        return False
-    return can_answer(decider, "risk_gate")
-
-
-def evaluate(
-    agent: str,
-    payload: Mapping[str, Any],
-    decider: Decider,
-    threshold: float,
-    worktree: str | None,
-    home: Path | None = None,
-    denylist_only: bool = False,
-    mode: str | None = None,
-) -> Verdict:
-    """Deny-list first (always blocks), then Laya's risk_gate, which is advisory.
-
-    `mode` is `agent` (every non-committer run: the deny-list also refuses git history changes, then Laya) or
-    `committer` (the commit run: today's deny-list only, Laya is not consulted). Without `mode`, `denylist_only`
-    picks `committer`.
-
-    When `risk_gate` is not trusted (no threshold, backend off, or Laya unavailable) Laya is not asked and nothing is
-    flagged: the call passes with a quiet `denylist_pass` event. Otherwise Laya blocks only when it says "risky"
-    with confidence at or above the key's threshold; anything else is allowed, and an unsure answer on a call that
-    is not read-only is flagged in the event for the UI.
-    """
-    tool_name = payload.get("tool_name")
-    tool_input = payload.get("tool_input")
-    if not isinstance(tool_name, str) or not tool_name:
-        return Verdict(False, "payload", "hook payload has no tool_name")
-    cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
-    root = worktree or cwd
-
-    mode = mode or (MODE_COMMITTER if denylist_only else MODE_AGENT)
-    reason = denylist_reason(tool_name, tool_input, cwd, root, home, mode=mode)
-    if reason:
-        return Verdict(False, "denylist", f"hard deny-list: {reason}")
-    if mode == MODE_COMMITTER:
-        return Verdict(True, "denylist_only", "passed the hard deny-list; Laya is not consulted in this mode")
-
-    if not _risk_gate_trusted(decider):
-        return Verdict(True, "denylist_pass", "passed the hard deny-list; the risk gate is not trusted, so Laya is not asked")
-
-    state, question, _ = questions.risk_gate(tool_name, tool_input, root)
-    decision = decider.ask_bool("risk_gate", state, question)
-    extra = {"laya_answer": decision.answer, "laya_confidence": decision.confidence, "laya_source": decision.source}
-    if confident(decision, threshold):
-        if decision.answer is True:
-            return Verdict(False, "laya_risky", f"Laya judged this risky (confidence {decision.confidence:.2f})", extra=extra)
-        return Verdict(True, "laya_safe", f"Laya judged this safe (confidence {decision.confidence:.2f})", extra=extra)
-    if is_read_only(tool_name, tool_input):
-        return Verdict(True, "unsure_read_only", "Laya unsure; call is read-only", extra=extra)
-    return Verdict(
-        True,
-        "unsure_flagged",
-        "Laya unsure and the call is not read-only; allowed, flagged for the user",
-        action="flag_unsure_not_read_only",
-        extra={**extra, "flagged": True},
-    )
-
-
-def _summary(tool_name: str, tool_input: Any) -> str:
-    if isinstance(tool_input, Mapping):
-        command = _command_text(tool_input)
-        if command is not None:
-            return questions.clip(command, 300)
-        for key in ("file_path", "path", "pattern", "url"):
-            if isinstance(tool_input.get(key), str):
-                return questions.clip(tool_input[key], 300)
-    return questions.clip(tool_input if tool_input is not None else "", 300)
-
-
-def _log(events: "EventLog | _TaggedEvents | None", agent: str, payload: Mapping[str, Any], verdict: Verdict) -> None:
-    if events is None:
-        return
-    try:
-        events.emit(
-            "decision",
-            key="risk_gate",
-            stage=f"hook:{verdict.stage}",
-            agent=agent,
-            tool=payload.get("tool_name"),
-            summary=_summary(str(payload.get("tool_name")), payload.get("tool_input")),
-            allowed=verdict.allow,
-            reason=verdict.reason,
-            action=verdict.action,
-            session_id=payload.get("session_id"),
-            **verdict.extra,
-        )
-    except Exception as exc:
-        print(f"workforce hook: could not write event log: {exc}", file=sys.stderr)
-
-
-def managed_ids(worktree: str | None, paths: Paths) -> dict[str, Any]:
-    """Event tags for a managed `worktree`, or an empty dict when it is not one.
-
-    Relative to `paths.worktrees_root`: `<run_id>/<repo_name>/<task_id>` gives `run_id`, `repo` (the middle segments, which may
-    contain `/`) and `task_id`; `<run_id>/<repo_name>/_integration` gives `run_id`, `repo`, `task_id=None` and
-    `integration=True`. The old layout `<run_id>/<task_id>` gives `run_id` and `task_id` only.
-    """
-    if not worktree:
-        return {}
-    root = Path(os.path.realpath(paths.worktrees_root))
-    try:
-        parts = Path(os.path.realpath(worktree)).relative_to(root).parts
-    except ValueError:
-        return {}
-    if len(parts) == 2:
-        return {"run_id": parts[0], "task_id": parts[1]}
-    if len(parts) < 3:
-        return {}
-    run_id, repo, last = parts[0], "/".join(parts[1:-1]), parts[-1]
-    if last == INTEGRATION_DIR:
-        return {"run_id": run_id, "repo": repo, "task_id": None, "integration": True}
-    return {"run_id": run_id, "repo": repo, "task_id": last}
-
-
-class _TaggedEvents:
-    """Adds fixed fields (run_id, repo, task_id, integration) to every event emitted through it."""
-
-    def __init__(self, events: EventLog, tags: Mapping[str, str]):
-        self._events = events
-        self._tags = dict(tags)
-
-    def emit(self, kind: str, **data: Any) -> dict[str, Any]:
-        return self._events.emit(kind, **{**self._tags, **data})
-
-
-def _block_message(verdict: Verdict) -> str:
-    return (
-        f"WorkForce risk gate blocked this tool call: {verdict.reason}. "
-        "Do not retry it or work around it; state what you were trying to do and stop for the user."
-    )
-
-
-def _parse_mode(value: str | None) -> str:
-    """`committer` for the commit run's env value (or its legacy name `denylist`); anything else is `agent`."""
-    return MODE_COMMITTER if value in (MODE_COMMITTER, MODE_DENYLIST_ONLY) else MODE_AGENT
-
-
-def _resolve_mode(mode: str | None, denylist_only: bool) -> str:
-    if mode is None:
-        return MODE_COMMITTER if denylist_only else MODE_AGENT
-    if mode not in MODES:
-        raise ValueError(f"hook mode must be one of {', '.join(MODES)}, not {mode!r}")
-    return mode
-
-
-def main(
-    argv: Sequence[str] | None = None,
-    stdin: TextIO | None = None,
-    stderr: TextIO | None = None,
-    env: Mapping[str, str] | None = None,
-    decider: Decider | None = None,
-    threshold: float | None = None,
-    home: Path | None = None,
-) -> int:
-    """Hook entry point: exit 0 with no output allows the call, exit 2 with a stderr reason blocks it.
-
-    Events carry `run_id`, `repo` and `task_id` (or `integration`) when `WF_WORKTREE` is a managed worktree under `home` (default: the user's home).
-    Any failure after the payload is read is a deny: `risk gate error: <exception type>`.
-    """
-    args = list(sys.argv[1:] if argv is None else argv)
-    stdin = stdin or sys.stdin
-    stderr = stderr or sys.stderr
-    env = os.environ if env is None else env
-    if len(args) != 1 or args[0] not in AGENTS:
-        print(f"usage: python -m workforce.decider.hooks {'|'.join(AGENTS)}", file=stderr)
-        return 2
-    agent = args[0]
-
-    repo = env.get("WF_REPO")
-    if not repo:
-        print("WorkForce risk gate blocked this call: WF_REPO is not set, so the run cannot be audited.", file=stderr)
-        return 2
-    mode = _parse_mode(env.get(MODE_ENV))
-    if decider is not None and threshold is None and mode != MODE_COMMITTER:
-        raise ValueError("threshold is required when a decider is injected")
-    try:
-        payload = json.loads(stdin.read())
-        if not isinstance(payload, dict):
-            raise ValueError("payload is not a JSON object")
-    except (ValueError, RecursionError) as exc:
-        print(f"WorkForce risk gate blocked this call: unreadable hook payload ({exc}).", file=stderr)
-        return 2
-
-    try:
-        return _decide(agent, payload, Path(repo), env, mode, decider, threshold, home, stderr)
-    except BaseException as exc:
-        return _deny_on_error(exc, agent, payload, Path(repo), env, home, stderr)
-
-
-def _decide(
-    agent: str,
-    payload: Mapping[str, Any],
-    repo: Path,
-    env: Mapping[str, str],
-    mode: str,
-    decider: Decider | None,
-    threshold: float | None,
-    home: Path | None,
-    stderr: TextIO,
-) -> int:
-    paths = Paths(repo, home=home)
-    events = _TaggedEvents(EventLog(paths), managed_ids(env.get("WF_WORKTREE"), paths))
-    if mode == MODE_COMMITTER:
-        decider = NullDecider()
-        threshold = 1.0
-    elif decider is None:
-        try:
-            cfg = wf_config.load(repo).decider
-            threshold = cfg.confidence
-            decider = build_decider(cfg, events)
-        except ConfigError as exc:
-            events.emit("error", source="hook", message=f"could not load workforce.toml for the risk gate: {exc}")
-            decider = NullDecider()
-            threshold = 1.0
-    try:
-        verdict = evaluate(agent, payload, decider, threshold, env.get("WF_WORKTREE"), home=home, mode=mode)
-        _log(events, agent, payload, verdict)
-    finally:
-        close = getattr(decider, "close", None)
-        if close:
-            close()
-    if verdict.allow:
-        return 0
-    print(_block_message(verdict), file=stderr)
-    return 2
-
-
-def _deny_on_error(
-    exc: BaseException,
-    agent: str,
-    payload: Mapping[str, Any],
-    repo: Path,
-    env: Mapping[str, str],
-    home: Path | None,
-    stderr: TextIO,
-) -> int:
-    verdict = Verdict(False, "error", f"risk gate error: {type(exc).__name__}")
-    try:
-        paths = Paths(repo, home=home)
-        events = _TaggedEvents(EventLog(paths), managed_ids(env.get("WF_WORKTREE"), paths))
-        _log(events, agent, payload, verdict)
-        events.emit("error", source="hook", message=f"risk gate error, tool call denied: {type(exc).__name__}: {exc}")
-    except BaseException as log_exc:
-        print(f"workforce hook: could not log the risk gate error: {log_exc}", file=sys.stderr)
-    try:
-        print(_block_message(verdict), file=stderr)
-    except BaseException:
-        pass
-    return 2
-
-
-def _hook_command(agent: str, repo: Path, worktree: Path | None, python: str | None, mode: str) -> str:
-    package_root = Path(workforce.__file__).resolve().parent.parent
-    assignments = [f"WF_REPO={shlex.quote(str(Path(repo).resolve()))}", f"PYTHONPATH={shlex.quote(str(package_root))}"]
-    if worktree is not None:
-        assignments.append(f"WF_WORKTREE={shlex.quote(str(Path(worktree).resolve()))}")
-    assignments.append(f"{MODE_ENV}={MODE_DENYLIST_ONLY if mode == MODE_COMMITTER else MODE_AGENT}")
-    interpreter = shlex.quote(python or sys.executable)
-    return f"{' '.join(assignments)} {interpreter} -m workforce.decider.hooks {agent} || exit 2"
-
-
-def claude_settings_json(
-    repo: Path,
-    worktree: Path | None = None,
-    python: str | None = None,
-    denylist_only: bool = False,
-    mode: str | None = None,
-) -> str:
-    """The per-run `--settings` JSON that registers the PreToolUse risk-gate hook for every Claude tool.
-
-    `mode="agent"` (default) is for every run but the commit run: the deny-list also refuses git commit, push and
-    other history changes, then Laya is consulted. `mode="committer"` (or `denylist_only=True`) is for the commit run:
-    today's deny-list only, and Laya is never consulted. The command exits 2 (deny) if the hook itself fails.
-    """
-    hook_mode = _resolve_mode(mode, denylist_only)
-    settings = {
-        "hooks": {
-            "PreToolUse": [
-                {
-                    "matcher": "*",
-                    "hooks": [
-                        {"type": "command", "command": _hook_command("claude", repo, worktree, python, hook_mode), "timeout": HOOK_TIMEOUT_S}
-                    ],
-                }
-            ]
-        }
-    }
-    return json.dumps(settings)
-
-
-def _toml_string(value: str) -> str:
-    """`value` as a TOML basic string; non-ASCII characters stay literal so astral-plane paths survive."""
-    escapes = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r"}
-    out = ['"']
-    for char in value:
-        if char in escapes:
-            out.append(escapes[char])
-        elif ord(char) < 0x20 or ord(char) == 0x7F:
-            out.append(f"\\u{ord(char):04X}")
-        elif 0xD800 <= ord(char) <= 0xDFFF:
-            raise ConfigError("cannot register the risk-gate hook: a path is not valid Unicode")
-        else:
-            out.append(char)
-    out.append('"')
-    return "".join(out)
-
-
-def codex_hook_args(
-    repo: Path,
-    worktree: Path | None = None,
-    python: str | None = None,
-    denylist_only: bool = False,
-    mode: str | None = None,
-) -> list[str]:
-    """Arguments for `codex exec` that register the PreToolUse risk-gate hook and let it run untrusted.
-
-    `mode` is as for `claude_settings_json`. Raises `ConfigError` when the override would not parse as TOML.
-    """
-    hook_mode = _resolve_mode(mode, denylist_only)
-    command = _hook_command("codex", repo, worktree, python, hook_mode)
-    value = f'[{{hooks=[{{type="command", command={_toml_string(command)}, timeout={HOOK_TIMEOUT_S}}}]}}]'
-    try:
-        parsed = tomllib.loads(f"value = {value}")["value"]
-        registered = parsed[0]["hooks"][0]["command"]
-    except (tomllib.TOMLDecodeError, KeyError, IndexError, TypeError) as exc:
-        raise ConfigError(f"cannot register the risk-gate hook: the Codex override is not valid TOML ({exc})") from exc
-    if registered != command:
-        raise ConfigError("cannot register the risk-gate hook: the Codex override does not round-trip")
-    return ["--dangerously-bypass-hook-trust", "-c", f"hooks.PreToolUse={value}"]
 
 
 if __name__ == "__main__":

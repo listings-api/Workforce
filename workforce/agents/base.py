@@ -44,7 +44,6 @@ class AgentRequest:
     user_setup: bool = False
     log_path: Path | None = None
     timeout_s: int = 3600
-    repo: Path | None = None
     add_dirs: list[Path] = field(default_factory=list)
     skip_git_check: bool = False
     tools: tuple[str, ...] | None = None

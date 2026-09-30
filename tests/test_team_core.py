@@ -135,7 +135,7 @@ def test_non_approve_verdicts_block(git_repo):
 
 def test_record_validates_inputs(git_repo):
     with pytest.raises(ValueError):
-        approvals.record(git_repo, "laya", "APPROVE", "x")
+        approvals.record(git_repo, "someone", "APPROVE", "x")
     with pytest.raises(ValueError):
         approvals.record(git_repo, "claude", "LGTM", "x")
     with pytest.raises(ValueError):

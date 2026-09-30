@@ -10,13 +10,16 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Mapping
 
-from workforce.config import EFFORTS
 from workforce.errors import ConfigError
 
 TEAM_TOML = "team.toml"
 WORKFORCE_DIRNAME = ".workforce"
 WF_HOME_ENV = "WF_HOME"
 
+EFFORTS = {
+    "claude": ("low", "medium", "high", "xhigh", "max"),
+    "codex": ("low", "medium", "high", "xhigh", "max", "ultra"),
+}
 DEFAULTS = {
     "claude": "~/.local/bin/claude",
     "codex": "/opt/homebrew/bin/codex",

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from workforce.decider import hooks as risk
+from workforce.team import denylist as risk
 
 MAX_DEPTH = 6
 COMMIT_LIKE = frozenset({"commit", "merge", "cherry-pick", "revert", "am"})

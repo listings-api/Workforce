@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_decider import FakeOllaya
 from workforce.team import approvals, config, usage_cache
 from workforce.usage.claude_limits import Window
 
@@ -165,7 +164,6 @@ def test_handshake_ping_and_tools_list(env):
         "plan_status",
         "review_status",
         "usage",
-        "laya",
         "codex_settings",
         "team_models",
         "picker",
@@ -502,51 +500,6 @@ def test_usage_override_is_reflected(env):
     assert body["state"]["level"] == "alert" and body["state"]["overridden"] is True
 
 
-@pytest.fixture
-def ollaya():
-    import threading as _t
-
-    fake = FakeOllaya()
-    thread = _t.Thread(target=fake.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
-    thread.start()
-    yield fake
-    fake.shutdown()
-    fake.server_close()
-
-
-def test_laya_unavailable_says_so_clearly(env):
-    env.extra_env["WF_LAYA_URL"] = "http://127.0.0.1:1"
-    client = env.start()
-    result = client.call("laya", {"question": "small change?"})
-    assert not result.get("isError")
-    assert "Laya not running" in result["content"][0]["text"]
-
-
-def test_laya_answers_yes_no_and_pick_one(env, ollaya):
-    env.extra_env["WF_LAYA_URL"] = ollaya.url
-    ollaya.choose = "yes"
-    client = env.start()
-    yes = json.loads(client.text("laya", {"question": "Is this a rename?", "context": "renames foo to bar"}))
-    assert yes == {"answer": True, "confidence": 0.95, "confident": True}
-    ollaya.choose = "beta"
-    pick = json.loads(client.text("laya", {"question": "Which one?", "options": ["alpha", "beta"]}))
-    assert pick["answer"] == "beta" and pick["confident"] is True
-    assert "renames foo to bar" in ollaya.requests[0]["body"]["state"]
-    assert list(ollaya.requests[1]["body"]["questions"]["q"]["criteria"]) == ["alpha", "beta"]
-
-
-def test_laya_below_threshold_or_broken_is_unsure(env, ollaya):
-    env.extra_env["WF_LAYA_URL"] = ollaya.url
-    client = env.start()
-    ollaya.confidence = 0.4
-    weak = json.loads(client.text("laya", {"question": "q?"}))
-    assert weak["confident"] is False and "unsure" in weak["note"]
-    ollaya.mode = "garbage"
-    assert "unsure" in client.text("laya", {"question": "q?"})
-    assert "at least two" in client.error_text("laya", {"question": "q?", "options": ["only"]})
-    assert "'question' is required" in client.error_text("laya", {})
-
-
 def test_codex_settings_get_and_set_persist_to_team_toml(env):
     client = env.start()
     got = json.loads(client.text("codex_settings"))
@@ -584,7 +537,6 @@ def test_server_exits_cleanly_when_stdin_closes(env):
     client = env.start()
     client.proc.stdin.close()
     assert client.proc.wait(timeout=15) == 0
-
 
 
 def plan_verdict(v="APPROVED", findings=(), session_id=None):

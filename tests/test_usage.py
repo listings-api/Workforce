@@ -6,11 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from workforce import config as wf_config
 from workforce.agents.base import AgentResult
-from workforce.agents.claude import ClaudeRunner
-from workforce.events import EventLog
-from workforce.paths import Paths
 from workforce.usage import claude_limits, codex_limits
 from workforce.usage.claude_limits import Window
 from workforce.usage.codex_limits import UsageReadError
@@ -223,14 +219,5 @@ def reading(percent, resets=None):
             }
         ],
     }
-
-
-@pytest.fixture
-def summary_env(tmp_path):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    paths = Paths(repo, home=tmp_path)
-    paths.root.mkdir()
-    return paths, EventLog(paths), FakeClock(), wf_config.parse(wf_config.default_toml()).role("usage_summary")
 
 

@@ -37,4 +37,4 @@ workforce = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["real_pytest_probe: uses the real pytest-import probe in checks", "laya: needs a running Ollaya with a Laya model, set WF_LAYA_LIVE=1", "slow: builds and installs the package for real, set WF_SLOW=1"]
+markers = ["slow: builds and installs the package for real, set WF_SLOW=1"]

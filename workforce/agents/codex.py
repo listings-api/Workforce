@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 from workforce import schemas
-from workforce.decider import hooks
 from workforce.agents import guard
 from workforce.agents.base import (
     AgentRequest,
@@ -68,8 +67,6 @@ class CodexRunner:
         cmd = [str(self.binary), "exec"]
         if req.resume_session:
             cmd += ["resume", req.resume_session]
-        if req.repo is not None:
-            cmd += hooks.codex_hook_args(req.repo, worktree=req.cwd)
         cmd += [
             "--json",
             "-m",

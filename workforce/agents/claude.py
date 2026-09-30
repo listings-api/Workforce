@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Callable
 
 from workforce import schemas
-from workforce.decider import hooks
 from workforce.agents import guard
 from workforce.agents.base import (
     AgentRequest,
@@ -83,13 +82,6 @@ class ClaudeRunner:
             cmd += ["--resume", req.resume_session]
         if req.browser:
             cmd.append("--chrome")
-        if req.repo is not None:
-            cmd += [
-                "--settings",
-                hooks.claude_settings_json(
-                    req.repo, worktree=req.cwd, denylist_only=req.user_setup
-                ),
-            ]
         for directory in req.add_dirs:
             cmd += ["--add-dir", str(directory)]
         return cmd

@@ -373,62 +373,6 @@ def _hook_command(settings_json):
     return settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
 
 
-def test_repo_adds_settings_hook_flag(tmp_path, scenario):
-    from workforce.decider import hooks
-
-    repo = tmp_path / "repo"
-    work = tmp_path / "work"
-    repo.mkdir()
-    work.mkdir()
-    scenario([{}])
-    assert runner().run(make_req(work, repo=repo)).ok
-    argv = scenario.calls()[0]["argv"]
-    expected = hooks.claude_settings_json(repo, worktree=work, denylist_only=False)
-    assert argv[-2:] == ["--settings", expected]
-    assert argv[:-2] == [
-        "-p",
-        "--model", "claude-sonnet-5-5",
-        "--effort", "high",
-        "--output-format", "stream-json",
-        "--verbose",
-        "--permission-mode", "auto",
-        "--setting-sources", "project",
-        "--strict-mcp-config",
-        "--mcp-config", '{"mcpServers":{}}',
-    ]
-    command = _hook_command(argv[-1])
-    assert "WF_MODE" not in command and "WF_HOOK_MODE=denylist" not in command
-    assert f"WF_WORKTREE={work.resolve()}" in command
-
-
-def test_commit_run_gets_denylist_only_hook(tmp_path, scenario):
-    from workforce.decider import hooks
-
-    repo = tmp_path / "repo"
-    work = tmp_path / "work"
-    repo.mkdir()
-    work.mkdir()
-    scenario([{}])
-    assert runner().run(make_req(work, repo=repo, user_setup=True)).ok
-    argv = scenario.calls()[0]["argv"]
-    assert argv[-2:] == ["--settings", hooks.claude_settings_json(repo, worktree=work, denylist_only=True)]
-    assert "WF_HOOK_MODE=denylist" in _hook_command(argv[-1])
-    for flag in ("--setting-sources", "--strict-mcp-config", "--mcp-config"):
-        assert flag not in argv
-
-
-def test_hook_flag_follows_schema_resume_chrome(tmp_path, scenario):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    scenario([{"structured": {"verdict": "APPROVE", "findings": []}}])
-    runner().run(
-        make_req(tmp_path, repo=repo, schema=VERDICT_SCHEMA, resume_session="s1", browser=True)
-    )
-    argv = scenario.calls()[0]["argv"]
-    positions = [argv.index(f) for f in ("--json-schema", "--resume", "--chrome", "--settings")]
-    assert positions == sorted(positions)
-
-
 def _permission_mode(argv):
     return argv[argv.index("--permission-mode") + 1]
 
@@ -573,12 +517,12 @@ def test_add_dirs_default_to_none_and_skip_git_check_to_false(tmp_path):
 
 def test_build_command_adds_one_add_dir_per_entry_after_the_other_flags(tmp_path):
     first, second = tmp_path / "dep-a" / "_integration", tmp_path / "dep-b" / "_integration"
-    req = make_req(tmp_path, add_dirs=[first, second], schema={"type": "object"}, resume_session="s1", browser=True, repo=tmp_path)
+    req = make_req(tmp_path, add_dirs=[first, second], schema={"type": "object"}, resume_session="s1", browser=True)
     argv = runner().build_command(req)
     positions = [i for i, arg in enumerate(argv) if arg == "--add-dir"]
     assert len(positions) == 2
     assert [argv[i + 1] for i in positions] == [str(first), str(second)]
-    for flag in ("--json-schema", "--resume", "--chrome", "--settings", "--permission-mode", "--model"):
+    for flag in ("--json-schema", "--resume", "--chrome", "--permission-mode", "--model"):
         assert argv.index(flag) < positions[0]
     assert argv[-4:] == ["--add-dir", str(first), "--add-dir", str(second)]
 

@@ -381,57 +381,6 @@ def test_structured_from_run_non_json_fails(tmp_path, scenario):
     assert not result.ok and result.error_kind == "crash"
 
 
-def test_no_hook_flags_without_repo(tmp_path, scenario):
-    scenario([{}])
-    runner().run(make_req(tmp_path))
-    argv = scenario.calls()[0]["argv"]
-    assert "--dangerously-bypass-hook-trust" not in argv
-    assert not any("hooks." in a for a in argv)
-
-
-def test_repo_inserts_hook_args_after_exec(tmp_path, scenario):
-    from workforce.decider import hooks
-
-    repo = tmp_path / "repo"
-    work = tmp_path / "work"
-    repo.mkdir()
-    work.mkdir()
-    scenario([{}])
-    assert runner().run(make_req(work, repo=repo, sandbox="read-only")).ok
-    argv = scenario.calls()[0]["argv"]
-    hook_args = hooks.codex_hook_args(repo, worktree=work)
-    output_file = argv[argv.index("-o") + 1]
-    assert argv == [
-        "exec",
-        *hook_args,
-        "--json",
-        "-m", "gpt-6-astra",
-        "-c", "model_reasoning_effort=high",
-        "-s", "read-only",
-        "-C", str(work),
-        "--disable", "browser_use", "--disable", "computer_use",
-        "-o", output_file,
-        "plan it",
-    ]
-    assert hook_args[0] == "--dangerously-bypass-hook-trust"
-
-
-def test_repo_inserts_hook_args_after_resume_id(tmp_path, scenario):
-    from workforce.decider import hooks
-
-    repo = tmp_path / "repo"
-    work = tmp_path / "work"
-    repo.mkdir()
-    work.mkdir()
-    scenario([{}])
-    assert runner().run(make_req(work, repo=repo, resume_session="thread-7", sandbox="read-only")).ok
-    argv = scenario.calls()[0]["argv"]
-    hook_args = hooks.codex_hook_args(repo, worktree=work)
-    assert argv[:3] == ["exec", "resume", "thread-7"]
-    assert argv[3 : 3 + len(hook_args)] == hook_args
-    assert argv[3 + len(hook_args)] == "--json"
-
-
 def test_endpoint_overrides_and_codex_api_key_are_scrubbed(tmp_path, scenario, monkeypatch):
     scenario([{}])
     names = ["CODEX_API_KEY", "OPENAI_BASE_URL", "OPENAI_ORG_ID", "ANTHROPIC_BASE_URL"]

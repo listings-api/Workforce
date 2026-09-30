@@ -110,7 +110,7 @@ def analyse_bash(command: str, cwd: str, home: Path | None = None, env: Mapping[
     """The always-deny reason (or None) and the git operations in a Bash command that need both reviewers' approval."""
     if not _GIT_WORD.search(command):
         return gitgate.Analysis()
-    from workforce.decider import hooks as risk
+    from workforce.team import denylist as risk
 
     for text in (command, risk._normalise(command)):
         if risk._NO_GPG.search(text):
@@ -197,7 +197,7 @@ def _protect_bash(command: str) -> dict[str, Any] | None:
 
 def _protect_tool(tool_name: str, tool_input: Mapping[str, Any], home: Path | None, cwd: str) -> dict[str, Any] | None:
     """Deny file tools that would write the signed approvals, or read/search the approvals key."""
-    from workforce.decider import hooks as risk
+    from workforce.team import denylist as risk
     from workforce.team import approvals, config
 
     home_dir = Path(home) if home is not None else Path.home()
@@ -241,7 +241,7 @@ def _scan_write(tool_name: str, tool_input: Mapping[str, Any]) -> dict[str, Any]
 
     if tool_name not in WRITE_TOOLS:
         return None
-    from workforce.decider import hooks as risk
+    from workforce.team import denylist as risk
 
     paths = risk._file_paths(tool_input)
     if paths and all(scriptscan.is_doc(path) for path in paths):

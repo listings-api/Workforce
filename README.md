@@ -62,7 +62,6 @@ You need:
 - **A Claude subscription** that includes Claude Code (Pro, Max, Team or Enterprise).
 - **A ChatGPT subscription** that includes Codex (Plus, Pro, Business or Enterprise).
 - **git** 2.31 or newer (2.38 or newer is best).
-- Optional: [Ollaya](https://github.com/ollaya-dev/ollaya) with the `laya:en` model, a small local model that gives quick yes/no hints. Everything works without it.
 
 **Claude Code:** follow the official install guide at <https://code.claude.com/docs/en/setup>, then check the version:
 

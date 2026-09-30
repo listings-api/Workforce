@@ -1,12 +1,11 @@
 """Hook rule 9: an agent writes only inside WF_WORKTREE (plus /tmp, $TMPDIR and /dev/null)."""
 
-import os
 from pathlib import Path
 
 import pytest
 
-from tests.test_hooks import FakeDecider, bash, events_of, run_main
-from workforce.decider import hooks
+from tests.test_denylist import bash, run_main
+from workforce.team import denylist
 
 HOME = Path("/Users/tester")
 WT = "/work/repo-wt"
@@ -15,7 +14,7 @@ MODES = ["agent", "committer"]
 
 
 def reason(tool, tool_input, mode="agent", cwd=WT, worktree=WT):
-    return hooks.denylist_reason(tool, tool_input, cwd, worktree, HOME, mode=mode)
+    return denylist.denylist_reason(tool, tool_input, cwd, worktree, HOME, mode=mode)
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -269,104 +268,15 @@ def test_with_no_known_worktree_writes_fail_closed():
 
 def test_main_denies_an_outside_write_and_logs_it(tmp_path):
     payload = {"tool_name": "Write", "tool_input": {"file_path": f"{OUTSIDE}/a.py"}, "cwd": WT, "session_id": "s1"}
-    code, stderr = run_main("claude", payload, tmp_path, decider=FakeDecider(answer=False))
+    code, stderr = run_main("claude", payload, tmp_path)
     assert code == 2 and "outside the worktree" in stderr
-    logged = events_of(tmp_path)
-    assert logged[-1]["allowed"] is False and logged[-1]["stage"] == "hook:denylist"
 
 
 def test_main_allows_writes_inside_and_to_tmp(tmp_path):
     for target in (f"{WT}/a.py", "/tmp/a.py"):
         payload = {"tool_name": "Write", "tool_input": {"file_path": target}, "cwd": WT, "session_id": "s1"}
-        assert run_main("claude", payload, tmp_path, decider=FakeDecider(answer=False))[0] == 0
+        assert run_main("claude", payload, tmp_path)[0] == 0
 
 
-def test_main_committer_mode_denies_outside_writes_too(tmp_path):
-    env = {"WF_HOOK_MODE": "denylist"}
-    denied = bash(f"echo hi > {OUTSIDE}/x")
-    assert run_main("claude", denied, tmp_path, extra_env=env)[0] == 2
-    commit = bash("git commit -m x")
-    assert run_main("claude", commit, tmp_path, extra_env=env)[0] == 0
-    assert run_main("claude", bash("git commit -m x"), tmp_path, decider=FakeDecider())[0] == 2
 
 
-def test_main_uses_wf_worktree_from_the_environment(tmp_path):
-    other = "/work/other-wt"
-    payload = {"tool_name": "Write", "tool_input": {"file_path": f"{other}/a.py"}, "cwd": WT, "session_id": "s1"}
-    assert run_main("claude", payload, tmp_path, decider=FakeDecider(answer=False))[0] == 2
-    assert run_main("claude", payload, tmp_path, decider=FakeDecider(answer=False), extra_env={"WF_WORKTREE": other})[0] == 0
-
-
-from workforce.paths import Paths
-
-
-def managed(tmp_path, *segments):
-    repo, home = tmp_path / "target", tmp_path / "home"
-    repo.mkdir(parents=True, exist_ok=True)
-    paths = Paths(repo, home=home)
-    path = paths.worktrees_root.joinpath(*segments)
-    path.mkdir(parents=True)
-    return repo, home, paths, path
-
-
-def test_managed_ids_single_segment_repo(tmp_path):
-    _, _, paths, path = managed(tmp_path, "R1", "app", "T2")
-    assert paths.worktree("R1", "T2", "app") == path
-    assert hooks.managed_ids(str(path), paths) == {"run_id": "R1", "repo": "app", "task_id": "T2"}
-
-
-def test_managed_ids_nested_repo(tmp_path):
-    _, _, paths, path = managed(tmp_path, "R1", "tools", "gamma", "T4")
-    assert paths.worktree("R1", "T4", "tools/gamma") == path
-    assert hooks.managed_ids(str(path), paths) == {"run_id": "R1", "repo": "tools/gamma", "task_id": "T4"}
-
-
-def test_managed_ids_integration_worktrees(tmp_path):
-    _, _, paths, path = managed(tmp_path, "R1", "app", "_integration")
-    assert paths.integration_worktree("R1", "app") == path
-    expected = {"run_id": "R1", "repo": "app", "task_id": None, "integration": True}
-    assert hooks.managed_ids(str(path), paths) == expected
-    _, _, paths, nested = managed(tmp_path / "second", "R2", "tools", "gamma", "_integration")
-    assert hooks.managed_ids(str(nested), paths) == {"run_id": "R2", "repo": "tools/gamma", "task_id": None, "integration": True}
-
-
-def test_managed_ids_old_layout_has_no_repo(tmp_path):
-    _, _, paths, path = managed(tmp_path, "R1", "T2")
-    assert hooks.managed_ids(str(path), paths) == {"run_id": "R1", "task_id": "T2"}
-
-
-def test_managed_ids_ignores_paths_that_are_not_worktrees(tmp_path):
-    _, _, paths, path = managed(tmp_path, "R1", "app", "T2")
-    assert hooks.managed_ids(str(paths.worktrees_root), paths) == {}
-    assert hooks.managed_ids(str(paths.worktrees_root / "R1"), paths) == {}
-    assert hooks.managed_ids(str(tmp_path), paths) == {}
-    assert hooks.managed_ids(None, paths) == {}
-
-
-@pytest.mark.parametrize(
-    "segments,expected",
-    [
-        (("R1", "app", "T2"), {"run_id": "R1", "repo": "app", "task_id": "T2"}),
-        (("R1", "tools", "gamma", "T4"), {"run_id": "R1", "repo": "tools/gamma", "task_id": "T4"}),
-        (("R1", "app", "_integration"), {"run_id": "R1", "repo": "app", "task_id": None, "integration": True}),
-        (("R1", "T2"), {"run_id": "R1", "task_id": "T2"}),
-    ],
-)
-def test_events_carry_the_worktree_tags(tmp_path, segments, expected):
-    repo, home, _, path = managed(tmp_path, *segments)
-    payload = bash("ls", str(path))
-    code, _ = run_main("claude", payload, repo, decider=FakeDecider(answer=False), extra_env={"WF_WORKTREE": str(path)}, home=home)
-    assert code == 0
-    event = events_of(repo)[0]
-    assert {key: event[key] for key in expected} == expected
-    for key in ("repo", "integration"):
-        assert (key in event) == (key in expected)
-
-
-def test_denied_call_in_a_nested_repo_worktree_is_tagged(tmp_path):
-    repo, home, _, path = managed(tmp_path, "R1", "tools", "gamma", "T4")
-    payload = {"tool_name": "Write", "tool_input": {"file_path": f"{OUTSIDE}/a.py"}, "cwd": str(path), "session_id": "s1"}
-    code, _ = run_main("claude", payload, repo, decider=FakeDecider(answer=False), extra_env={"WF_WORKTREE": str(path)}, home=home)
-    assert code == 2
-    event = events_of(repo)[0]
-    assert (event["run_id"], event["repo"], event["task_id"], event["allowed"]) == ("R1", "tools/gamma", "T4", False)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
-from workforce.config import EFFORTS
+from workforce.team.config import EFFORTS
 from workforce.team import claude_info
 from workforce.team.codex_models import CodexModel, find
 

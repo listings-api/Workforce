@@ -15,14 +15,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from workforce import git_ops, prompts, schemas
 from workforce.agents import base as agent_base
 from workforce.agents import guard
-from workforce.config import EFFORTS
-from workforce.decider.base import is_confident
-from workforce.decider.laya import LayaDecider
+from workforce.team.config import EFFORTS
 from workforce.errors import WorkforceError
 from workforce.team import approvals, claude_review, codex_models, config, picker, relay, usage_cache
 from workforce.usage import codex_limits
@@ -30,9 +28,6 @@ from workforce.usage import codex_limits
 SERVER_NAME = "workforce-codex"
 SERVER_VERSION = "0.1.0"
 DEFAULT_PROTOCOL = "2025-06-18"
-LAYA_URL = "http://127.0.0.1:11435"
-LAYA_CONFIDENCE = 0.85
-LAYA_KEY = "task_size"
 ASK_TIMEOUT_S = 600
 REVIEW_TIMEOUT_S = 1200
 REVIEW_REJECTIONS = 3
@@ -124,18 +119,6 @@ TOOLS: list[dict] = [
         "inputSchema": _obj({}),
     },
     {
-        "name": "laya",
-        "description": "Ask the local Laya model a quick yes/no or pick-one question. A hint only: never for approvals or model choice.",
-        "inputSchema": _obj(
-            {
-                "question": _STR,
-                "options": {"type": "array", "items": _STR, "minItems": 2, "description": "Omit for a yes/no question"},
-                "context": _STR,
-            },
-            ["question"],
-        ),
-    },
-    {
         "name": "codex_settings",
         "description": "Get or set the default Codex model, effort and mode (saved in ~/.workforce/team.toml). Call with no arguments to read them. mode 'write' lets codex_ask edit files in the project (workspace-write); plan and review stay read-only.",
         "inputSchema": _obj({"model": _STR, "effort": _EFFORT, "mode": {"type": "string", "enum": list(config.CODEX_MODES)}}),
@@ -159,15 +142,10 @@ TOOLS: list[dict] = [
     },
     {
         "name": "settings",
-        "description": "One text view of every WorkForce setting (Codex model/effort/mode, sub-agent models, alert/stop percent), the current usage and the Laya status, with the command that changes each. Show the text to the user exactly as returned.",
+        "description": "One text view of every WorkForce setting (Codex model/effort/mode, sub-agent models, alert/stop percent), and the current usage, with the command that changes each. Show the text to the user exactly as returned.",
         "inputSchema": _obj({}),
     },
 ]
-
-
-class _NoEvents:
-    def emit(self, kind: str, **data: Any) -> None:
-        return None
 
 
 def project_dir() -> Path:
@@ -579,30 +557,6 @@ class Server:
             payload["warning"] = problem
         return _json_text(payload)
 
-    def _laya(self) -> LayaDecider:
-        return LayaDecider(os.environ.get("WF_LAYA_URL") or LAYA_URL, LAYA_CONFIDENCE, _NoEvents())
-
-    def tool_laya(self, args: dict) -> dict:
-        question = _string_arg(args, "question", required=True)
-        options = args.get("options")
-        if options is not None and (not isinstance(options, list) or len(options) < 2 or not all(isinstance(o, str) for o in options)):
-            raise ToolError("'options' must be a list of at least two strings")
-        context = _string_arg(args, "context") or question
-        decider = self._laya()
-        try:
-            if not decider.available():
-                return _text(f"Laya not running at {decider.url}: no hint available. Decide yourself or ask the user.")
-            decision = decider.ask_choice(LAYA_KEY, context, question, options) if options else decider.ask_bool(LAYA_KEY, context, question)
-        finally:
-            decider.close()
-        if decision.source != "laya":
-            return _text("Laya is unsure (no usable answer). Decide yourself or ask the user.")
-        confident = is_confident(decision, LAYA_CONFIDENCE)
-        payload = {"answer": decision.answer, "confidence": decision.confidence, "confident": confident}
-        if not confident:
-            payload["note"] = "below the confidence threshold: treat as unsure"
-        return _json_text(payload)
-
     def tool_picker(self, args: dict) -> dict:
         kind = _string_arg(args, "kind", required=True)
         cfg = self._cfg()
@@ -666,11 +620,6 @@ class Server:
         cfg = self._cfg()
         problem = self.refresh_codex_usage(cfg)
         state = usage_cache.state(cfg, self.home)
-        decider = self._laya()
-        try:
-            laya = f"running at {decider.url}" if decider.available() else f"not running at {decider.url} (the laya tool gives no hints)"
-        finally:
-            decider.close()
         write_note = "Codex may edit files in this project when you ask it to" if cfg.codex_mode == "write" else "Codex only reads; it never edits files"
         lines = [
             "WorkForce settings",
@@ -686,8 +635,6 @@ class Server:
             f"             carry on past a stop: /wf-continue",
             f"Usage now    {state['text']}" + (f"  ({problem})" if problem else ""),
             f"             details: /usage",
-            f"Laya         {laya}",
-            f"             (a local hint model; set WF_LAYA_URL to point at another address)",
         ]
         return _text("\n".join(lines))
 

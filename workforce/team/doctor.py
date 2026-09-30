@@ -9,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -25,8 +24,6 @@ MIN_GIT = (2, 31, 0)
 CLEAN_MERGE_GIT = (2, 38, 0)
 AUTH_TIMEOUT_S = 15
 GIT_TIMEOUT_S = 5
-LAYA_URL = "http://127.0.0.1:11435"
-LAYA_TIMEOUT_S = 1.0
 API_KEY_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY")
 STEERING_VARS = ("ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY")
 INSTALL_HINTS = {
@@ -217,20 +214,11 @@ def default_models_probe(binary: Path, home: Path | None) -> tuple[int, str | No
     return len(models), problem
 
 
-def default_laya_probe(url: str = LAYA_URL) -> bool:
-    try:
-        with urllib.request.urlopen(f"{url}/v1/models", timeout=LAYA_TIMEOUT_S) as response:
-            return 200 <= response.status < 300
-    except (OSError, ValueError):
-        return False
-
-
 def check_optional(
     codex: Path | None,
     codex_ready: bool,
     home: Path | None,
     models_probe: Callable[[Path, Path | None], tuple[int, str | None]],
-    laya_probe: Callable[[], bool],
 ) -> list[Check]:
     checks: list[Check] = []
     if codex is not None and codex_ready:
@@ -242,10 +230,6 @@ def check_optional(
             checks.append(Check("codex models (optional)", OK, f"{count} Codex models readable"))
         else:
             checks.append(Check("codex models (optional)", WARN, problem or "no Codex models were listed", "only needed for the model picker; `wf` works without it"))
-    if laya_probe():
-        checks.append(Check("laya (optional)", OK, f"Laya/Ollaya is answering at {LAYA_URL}"))
-    else:
-        checks.append(Check("laya (optional)", WARN, f"Laya/Ollaya is not running at {LAYA_URL}", "optional: only the old pipeline uses it; everything works without it"))
     return checks
 
 
@@ -253,7 +237,6 @@ def run_checks(
     home: Path | None = None,
     environ: Mapping[str, str] | None = None,
     models_probe: Callable[[Path, Path | None], tuple[int, str | None]] = default_models_probe,
-    laya_probe: Callable[[], bool] = default_laya_probe,
 ) -> list[Check]:
     environ = os.environ if environ is None else environ
     checks = [check_python(), check_git(environ)]
@@ -264,7 +247,7 @@ def run_checks(
     checks += [check_plugin(), check_workforce_dir(home)]
     codex_binary, _ = _resolve("codex", environ, home)
     codex_ready = all(check.status != FAIL for check in codex_checks)
-    checks += check_optional(codex_binary, codex_ready, home, models_probe, laya_probe)
+    checks += check_optional(codex_binary, codex_ready, home, models_probe)
     return checks
 
 
@@ -284,7 +267,6 @@ def main(
     environ: Mapping[str, str] | None = None,
     stdout=None,
     models_probe: Callable[[Path, Path | None], tuple[int, str | None]] = default_models_probe,
-    laya_probe: Callable[[], bool] = default_laya_probe,
 ) -> int:
     parser = argparse.ArgumentParser(prog="wf doctor", description="Check the WorkForce setup (uses no model quota).")
     parser.add_argument("--json", action="store_true", help="print machine-readable results")
@@ -293,7 +275,7 @@ def main(
     except SystemExit as exc:
         return int(exc.code or 0)
     out = stdout if stdout is not None else sys.stdout
-    checks = run_checks(home, environ, models_probe, laya_probe)
+    checks = run_checks(home, environ, models_probe)
     failed = any(check.status == FAIL for check in checks)
     if options.json:
         payload = {"ok": not failed, "checks": [asdict(check) for check in checks], "next": FIX_FIRST if failed else NEXT_STEP}

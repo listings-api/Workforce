@@ -1,5 +1,5 @@
 ---
-description: Show every WorkForce setting, current usage and the Laya status, with the command that changes each
+description: Show every WorkForce setting and current usage, with the command that changes each
 allowed-tools: mcp__plugin_workforce_codex__settings
 ---
 

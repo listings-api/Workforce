@@ -40,7 +40,7 @@ def env(tmp_path, monkeypatch):
     return type("Env", (), {"home": home, "bin": bindir, "environ": {"PATH": str(bindir)}})()
 
 
-def run(env, *args, environ=None, models=None, laya=None):
+def run(env, *args, environ=None, models=None):
     out = io.StringIO()
     calls = []
 
@@ -54,7 +54,6 @@ def run(env, *args, environ=None, models=None, laya=None):
         environ=env.environ if environ is None else environ,
         stdout=out,
         models_probe=models_probe,
-        laya_probe=(lambda: True) if laya is None else laya,
     )
     return code, out.getvalue(), calls
 
@@ -210,10 +209,9 @@ def test_unwritable_workforce_folder_fails(env):
 
 
 def test_optional_checks_never_fail(env):
-    code, out, _ = run(env, models=(0, "could not read the Codex model list (boom)"), laya=lambda: False)
+    code, out, _ = run(env, models=(0, "could not read the Codex model list (boom)"))
     assert code == 0
     assert "! could not read the Codex model list (boom)" in out
-    assert "! Laya/Ollaya is not running" in out
 
 
 def test_optional_models_probe_exception_is_contained(env):
@@ -222,7 +220,7 @@ def test_optional_models_probe_exception_is_contained(env):
     def boom(binary, home):
         raise RuntimeError("kaput")
 
-    code = doctor.main([], home=env.home, environ=env.environ, stdout=out, models_probe=boom, laya_probe=lambda: True)
+    code = doctor.main([], home=env.home, environ=env.environ, stdout=out, models_probe=boom)
     assert code == 0 and "RuntimeError: kaput" in out.getvalue()
 
 

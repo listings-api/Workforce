@@ -126,12 +126,12 @@ def test_every_referenced_mcp_tool_exists_on_the_server(PLUGIN):
             pytest.fail(f"{name} uses unprefixed tool name {bare}")
 
 
-def test_team_md_has_the_nine_rules_and_is_tight(PLUGIN):
+def test_team_md_has_the_eight_rules_and_is_tight(PLUGIN):
     text = (PLUGIN / "TEAM.md").read_text()
     rules = re.findall(r"^(\d)\. ", text, re.M)
-    assert rules == ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    assert rules == ["1", "2", "3", "4", "5", "6", "7", "8"]
     assert len(text) < 3000
-    for needle in ("codex_plan", "fast-coder", "codex_review", "claude_review", "laya", "/codex-model", "force-push", "verbatim", "/codex-mode", "`repo`"):
+    for needle in ("codex_plan", "fast-coder", "codex_review", "claude_review", "/codex-model", "force-push", "verbatim", "/codex-mode", "`repo`"):
         assert needle in text
 
 
