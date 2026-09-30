@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.workforce/
+*.egg-info/
+.claude-flow/
+.swarm/
+.hive-mind/
+.claude/settings.local.json
+.DS_Store
+*.log

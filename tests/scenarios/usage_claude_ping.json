@@ -1,0 +1,5 @@
+{
+  "claude": [
+    {"text": "OK", "rate_limits": {"five_hour": 0.12, "seven_day": 0.33}, "resets_at": {"five_hour": 1790676000, "seven_day": 1790838000}}
+  ]
+}

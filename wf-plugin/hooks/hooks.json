@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/../.venv/bin/python\" -m workforce.team.hooks pretooluse",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/../.venv/bin/python\" -m workforce.team.hooks userpromptsubmit",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}

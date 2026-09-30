@@ -1,0 +1,6 @@
+{
+  "name": "workforce",
+  "version": "0.1.0",
+  "description": "Adds Codex to your Claude Code session: Codex plans and reviews, Claude codes, both must approve before a commit.",
+  "author": {"name": "WorkForce"}
+}

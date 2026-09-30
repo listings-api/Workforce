@@ -1,0 +1,117 @@
+{
+  "claude": [
+    {
+      "structured": {
+        "agree": true,
+        "objections": [],
+        "suggested_changes": []
+      },
+      "match": "# Role: plan reviewer"
+    },
+    {
+      "write_files": {
+        "a.txt": "alpha\n"
+      },
+      "text": "Created a.txt",
+      "match": "## Task T1:"
+    },
+    {
+      "structured": {
+        "verdict": "BLOCKED",
+        "summary": "needs a product decision",
+        "findings": [
+          {
+            "severity": "blocker",
+            "file": "a.txt",
+            "line": 1,
+            "message": "Which file name is wanted?"
+          }
+        ]
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "structured": {
+        "verdict": "BLOCKED",
+        "summary": "still needs a product decision",
+        "findings": [
+          {
+            "severity": "blocker",
+            "file": "a.txt",
+            "line": 1,
+            "message": "Which file name is wanted?"
+          }
+        ]
+      },
+      "match": "You reviewed this task earlier"
+    },
+    {
+      "write_files": {
+        "a.txt": "alpha renamed\n"
+      },
+      "text": "Fixed a.txt",
+      "match": [
+        "# Role: coder (fixing)",
+        "USER-CHOICE-ALPHA"
+      ]
+    },
+    {
+      "structured": {
+        "verdict": "APPROVE",
+        "summary": "claude approves",
+        "findings": []
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "run": "git add -A && git commit -q -m 'T1: add a' && printf '{\"committed\":true,\"sha\":\"%s\",\"message\":\"m\",\"error\":null}' \"$(git rev-parse HEAD)\"",
+      "structured_from_run": true,
+      "match": "# Role: committer"
+    }
+  ],
+  "codex": [
+    {
+      "structured": {
+        "tasks": [
+          {
+            "id": "T1",
+            "title": "Add a.txt",
+            "description": "Create a.txt containing the word alpha",
+            "acceptance": [
+              "Add a.txt is done and verifiable"
+            ],
+            "depends_on": []
+          }
+        ],
+        "risks": [],
+        "open_questions": []
+      },
+      "match": "# Role: planner",
+      "text": "plan"
+    },
+    {
+      "structured": {
+        "verdict": "APPROVE",
+        "summary": "codex approves",
+        "findings": []
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "structured": {
+        "verdict": "APPROVE",
+        "summary": "codex still approves",
+        "findings": []
+      },
+      "match": "You reviewed this task earlier"
+    },
+    {
+      "structured": {
+        "verdict": "APPROVE",
+        "summary": "codex approves the fix",
+        "findings": []
+      },
+      "match": "You review one task's changes on your own"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "claude": [
+    {
+      "structured": {
+        "agree": true,
+        "objections": [],
+        "suggested_changes": []
+      },
+      "match": "# Role: plan reviewer"
+    },
+    {
+      "write_files": {
+        "a.txt": "alpha\n"
+      },
+      "text": "Created a.txt",
+      "match": "## Task T1:"
+    },
+    {
+      "error": "crash"
+    },
+    {
+      "structured": {
+        "verdict": "APPROVE",
+        "summary": "claude approves",
+        "findings": []
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "run": "git add -A && git commit -q -m 'T1: add a' && printf '{\"committed\":true,\"sha\":\"%s\",\"message\":\"m\",\"error\":null}' \"$(git rev-parse HEAD)\"",
+      "structured_from_run": true,
+      "match": "# Role: committer"
+    }
+  ],
+  "codex": [
+    {
+      "structured": {
+        "tasks": [
+          {
+            "id": "T1",
+            "title": "Add a.txt",
+            "description": "Create a.txt containing the word alpha",
+            "acceptance": [
+              "Add a.txt is done and verifiable"
+            ],
+            "depends_on": []
+          }
+        ],
+        "risks": [],
+        "open_questions": []
+      },
+      "match": "# Role: planner",
+      "text": "plan"
+    },
+    {
+      "structured": {
+        "verdict": "APPROVE",
+        "summary": "codex approves",
+        "findings": []
+      },
+      "match": "You review one task's changes on your own"
+    }
+  ]
+}

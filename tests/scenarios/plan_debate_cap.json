@@ -1,0 +1,169 @@
+{
+  "claude": [
+    {
+      "structured": {
+        "agree": false,
+        "objections": [
+          "REVIEWER-OBJECTION-1"
+        ],
+        "suggested_changes": [
+          "REVIEWER-CHANGE-1"
+        ]
+      },
+      "match": "# Role: plan reviewer"
+    },
+    {
+      "structured": {
+        "agree": false,
+        "objections": [
+          "REVIEWER-OBJECTION-2"
+        ],
+        "suggested_changes": [
+          "REVIEWER-CHANGE-2"
+        ]
+      },
+      "match": "# Role: plan reviewer"
+    },
+    {
+      "structured": {
+        "agree": false,
+        "objections": [
+          "REVIEWER-OBJECTION-3"
+        ],
+        "suggested_changes": [
+          "REVIEWER-CHANGE-3"
+        ]
+      },
+      "match": "# Role: plan reviewer"
+    },
+    {
+      "structured": {
+        "agree": false,
+        "objections": [
+          "REVIEWER-OBJECTION-4"
+        ],
+        "suggested_changes": [
+          "REVIEWER-CHANGE-4"
+        ]
+      },
+      "match": "# Role: plan reviewer"
+    }
+  ],
+  "codex": [
+    {
+      "structured": {
+        "tasks": [
+          {
+            "id": "T1",
+            "title": "Add a.txt",
+            "description": "Create a.txt containing the word alpha",
+            "acceptance": [
+              "Add a.txt is done and verifiable"
+            ],
+            "depends_on": []
+          }
+        ],
+        "risks": [],
+        "open_questions": []
+      },
+      "match": "# Role: planner",
+      "text": "plan"
+    },
+    {
+      "structured": {
+        "plan": {
+          "tasks": [
+            {
+              "id": "T1",
+              "title": "Add a.txt",
+              "description": "Create a.txt containing the word alpha",
+              "acceptance": [
+                "Add a.txt is done and verifiable"
+              ],
+              "depends_on": []
+            }
+          ],
+          "risks": [],
+          "open_questions": []
+        },
+        "debate": {
+          "position": "PLANNER-POSITION-1",
+          "concessions": [
+            "concession 1"
+          ],
+          "remaining_disagreements": [
+            "REMAINING-1"
+          ]
+        }
+      },
+      "match": [
+        "# Role: planner (revising after review)",
+        "REVIEWER-OBJECTION-1"
+      ]
+    },
+    {
+      "structured": {
+        "plan": {
+          "tasks": [
+            {
+              "id": "T1",
+              "title": "Add a.txt",
+              "description": "Create a.txt containing the word alpha",
+              "acceptance": [
+                "Add a.txt is done and verifiable"
+              ],
+              "depends_on": []
+            }
+          ],
+          "risks": [],
+          "open_questions": []
+        },
+        "debate": {
+          "position": "PLANNER-POSITION-2",
+          "concessions": [
+            "concession 2"
+          ],
+          "remaining_disagreements": [
+            "REMAINING-2"
+          ]
+        }
+      },
+      "match": [
+        "# Role: planner (revising after review)",
+        "REVIEWER-OBJECTION-2"
+      ]
+    },
+    {
+      "structured": {
+        "plan": {
+          "tasks": [
+            {
+              "id": "T1",
+              "title": "Add a.txt",
+              "description": "Create a.txt containing the word alpha",
+              "acceptance": [
+                "Add a.txt is done and verifiable"
+              ],
+              "depends_on": []
+            }
+          ],
+          "risks": [],
+          "open_questions": []
+        },
+        "debate": {
+          "position": "PLANNER-POSITION-3",
+          "concessions": [
+            "concession 3"
+          ],
+          "remaining_disagreements": [
+            "REMAINING-3"
+          ]
+        }
+      },
+      "match": [
+        "# Role: planner (revising after review)",
+        "REVIEWER-OBJECTION-3"
+      ]
+    }
+  ]
+}

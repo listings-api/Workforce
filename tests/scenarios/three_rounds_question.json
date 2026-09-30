@@ -1,0 +1,181 @@
+{
+  "claude": [
+    {
+      "structured": {
+        "agree": true,
+        "objections": [],
+        "suggested_changes": []
+      },
+      "match": "# Role: plan reviewer"
+    },
+    {
+      "write_files": {
+        "a.txt": "alpha\n"
+      },
+      "text": "Created a.txt",
+      "match": "## Task T1:"
+    },
+    {
+      "structured": {
+        "verdict": "REQUEST_CHANGES",
+        "summary": "claude round 1",
+        "findings": [
+          {
+            "severity": "minor",
+            "file": "a.txt",
+            "line": 1,
+            "message": "CLAUDE-MINOR-1"
+          }
+        ]
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "write_files": {
+        "a.txt": "alpha 1\n"
+      },
+      "text": "Fixed a.txt",
+      "match": [
+        "# Role: coder (fixing)",
+        "CLAUDE-MINOR-1"
+      ]
+    },
+    {
+      "structured": {
+        "verdict": "REQUEST_CHANGES",
+        "summary": "claude round 2",
+        "findings": [
+          {
+            "severity": "minor",
+            "file": "a.txt",
+            "line": 1,
+            "message": "CLAUDE-MINOR-2"
+          }
+        ]
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "write_files": {
+        "a.txt": "alpha 2\n"
+      },
+      "text": "Fixed a.txt",
+      "match": [
+        "# Role: coder (fixing)",
+        "CLAUDE-MINOR-2"
+      ]
+    },
+    {
+      "structured": {
+        "verdict": "REQUEST_CHANGES",
+        "summary": "claude round 3",
+        "findings": [
+          {
+            "severity": "minor",
+            "file": "a.txt",
+            "line": 1,
+            "message": "CLAUDE-MINOR-3"
+          }
+        ]
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "write_files": {
+        "a.txt": "alpha 3\n"
+      },
+      "text": "Fixed a.txt",
+      "match": [
+        "# Role: coder (fixing)",
+        "CLAUDE-MINOR-3"
+      ]
+    },
+    {
+      "structured": {
+        "verdict": "APPROVE",
+        "summary": "claude approves",
+        "findings": []
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "run": "git add -A && git commit -q -m 'T1: add a' && printf '{\"committed\":true,\"sha\":\"%s\",\"message\":\"m\",\"error\":null}' \"$(git rev-parse HEAD)\"",
+      "structured_from_run": true,
+      "match": "# Role: committer"
+    }
+  ],
+  "codex": [
+    {
+      "structured": {
+        "tasks": [
+          {
+            "id": "T1",
+            "title": "Add a.txt",
+            "description": "Create a.txt containing the word alpha",
+            "acceptance": [
+              "Add a.txt is done and verifiable"
+            ],
+            "depends_on": []
+          }
+        ],
+        "risks": [],
+        "open_questions": []
+      },
+      "match": "# Role: planner",
+      "text": "plan"
+    },
+    {
+      "structured": {
+        "verdict": "REQUEST_CHANGES",
+        "summary": "codex round 1",
+        "findings": [
+          {
+            "severity": "minor",
+            "file": "a.txt",
+            "line": 1,
+            "message": "CODEX-MINOR-1"
+          }
+        ]
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "structured": {
+        "verdict": "REQUEST_CHANGES",
+        "summary": "codex round 2",
+        "findings": [
+          {
+            "severity": "minor",
+            "file": "a.txt",
+            "line": 1,
+            "message": "CODEX-MINOR-2"
+          }
+        ]
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "structured": {
+        "verdict": "REQUEST_CHANGES",
+        "summary": "codex round 3",
+        "findings": [
+          {
+            "severity": "minor",
+            "file": "a.txt",
+            "line": 1,
+            "message": "CODEX-MINOR-3"
+          }
+        ]
+      },
+      "match": "You review one task's changes on your own"
+    },
+    {
+      "structured": {
+        "verdict": "APPROVE",
+        "summary": "codex approves",
+        "findings": []
+      },
+      "match": "You review one task's changes on your own"
+    }
+  ]
+}

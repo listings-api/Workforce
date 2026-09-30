@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "codex": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/../.venv/bin/python",
+      "args": ["-m", "workforce.team.mcp_server"]
+    }
+  }
+}

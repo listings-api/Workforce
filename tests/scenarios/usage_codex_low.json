@@ -1,0 +1,7 @@
+{
+  "codex_limits": {
+    "primary": {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1790676000},
+    "secondary": {"usedPercent": 4, "windowDurationMins": 10080, "resetsAt": 1791265456},
+    "planType": "business"
+  }
+}

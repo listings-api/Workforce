@@ -1,0 +1,34 @@
+{
+  "claude": [
+    {
+      "structured": {
+        "agree": true,
+        "objections": [],
+        "suggested_changes": []
+      },
+      "match": "# Role: plan reviewer",
+      "sleep": 2.0
+    }
+  ],
+  "codex": [
+    {
+      "structured": {
+        "tasks": [
+          {
+            "id": "T1",
+            "title": "Add a.txt",
+            "description": "Create a.txt containing the word alpha",
+            "acceptance": [
+              "Add a.txt is done and verifiable"
+            ],
+            "depends_on": []
+          }
+        ],
+        "risks": [],
+        "open_questions": []
+      },
+      "match": "# Role: planner",
+      "text": "plan"
+    }
+  ]
+}
