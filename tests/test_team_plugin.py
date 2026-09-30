@@ -138,4 +138,4 @@ def test_team_md_has_the_nine_rules_and_is_tight(PLUGIN):
 def test_pyproject_entry_points():
     scripts = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["scripts"]
     assert scripts["wf"] == "workforce.team.launch:main"
-    assert scripts["workforce"] == "workforce.cli:main"
+    assert scripts["workforce"] == "workforce.team.launch:main"

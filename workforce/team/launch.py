@@ -1,6 +1,6 @@
 """`wf`: start the real interactive Claude Code with the WorkForce plugin, status line and team rules added.
 
-The old pipeline subcommands (`wf run`, `status`, `init`, …) still go to `workforce.cli`.
+WorkForce only runs as a chat: the unattended pipeline commands (`wf run`, `status`, `init`, …) and `wf -p` were removed.
 """
 
 from __future__ import annotations
@@ -149,9 +149,10 @@ def main(
 ) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] in OLD_COMMANDS:
-        from workforce import cli
-
-        return cli.main(args)
+        return _error(
+            f"`wf {args[0]}` was removed: WorkForce only runs as a chat. Start `wf` in your project and type the task, "
+            'or give it as the first message: wf "your task".'
+        )
 
     environ = os.environ if environ is None else environ
     if args and args[0] in SUBCOMMANDS:

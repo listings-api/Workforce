@@ -89,11 +89,9 @@ def test_wf_prints_banner_before_exec(setup):
 @pytest.mark.parametrize(
     "command", ["run", "status", "usage", "questions", "answer", "models", "pause", "resume", "log", "init", "repos", "publish"]
 )
-def test_old_subcommands_delegate_to_workforce_cli(setup, monkeypatch, command):
-    seen = []
-    monkeypatch.setattr("workforce.cli.main", lambda argv: seen.append(list(argv)) or 7)
-    assert run(setup, [command, "some", "--flag"]) == 7
-    assert seen == [[command, "some", "--flag"]]
+def test_the_removed_pipeline_commands_say_so_and_start_nothing(setup, command, capsys):
+    assert run(setup, [command, "some", "--flag"]) == 3
+    assert f"`wf {command}` was removed" in capsys.readouterr().err
     assert setup[3] == []
 
 

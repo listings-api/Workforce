@@ -66,11 +66,11 @@ def test_the_wheel_contains_every_plugin_file(tmp_path):
     assert "workforce/team/plugin_runtime.py" in inside
 
 
-def test_the_project_is_version_0_2_0_with_a_repository_url():
+def test_the_project_is_version_0_3_0_with_a_repository_url():
     import tomllib
 
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
-    assert project["version"] == "0.2.0"
+    assert project["version"] == "0.3.0"
     assert project["urls"]["Repository"] == "https://github.com/listings-api/Workforce"
 
 

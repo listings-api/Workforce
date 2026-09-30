@@ -1,6 +1,6 @@
 # WorkForce team CLI: `wf` = Claude Code + Codex
 
-The user wants exactly the Claude Code CLI experience, with Codex added to the team. **No workspace config, integration branches or model-pick screens.** `wf` launches the real interactive `claude`, with a plugin, settings and appended instructions. The old pipeline (`wf run`, `status`, `init`, …) stays reachable but is no longer the default.
+The user wants exactly the Claude Code CLI experience, with Codex added to the team. **No workspace config, integration branches or model-pick screens.** `wf` launches the real interactive `claude`, with a plugin, settings and appended instructions. WorkForce only runs as a chat: `wf -p` / `--print` and the earlier unattended pipeline (`wf run`, `status`, `init`, …) were removed and are refused with a clear message.
 
 Everything here uses the subscriptions via the official CLIs: never an API key, and never a model API called directly.
 
@@ -20,13 +20,13 @@ status line:  WF │ Claude 5h 23% · wk 44% │ Codex wk 3% │ codex gpt-6-sol
 ## 2. Pieces (all code under `workforce/team/`; the plugin is package data in `workforce/team/plugin/`)
 
 ### 2a. Launcher (`workforce/team/launch.py`, entry point `wf`)
-- `wf [args…]`: if the first arg is an old pipeline subcommand (`run status usage questions answer models pause resume log init repos publish`), delegate to the old `workforce.cli.main`. Otherwise print the banner and `os.execvp` the claude binary with:
+- `wf [args…]`: `wf doctor`, `wf demo` and `wf codex` are WorkForce's own subcommands; `-p` / `--print` and the removed pipeline subcommands exit 3 with a message. Otherwise print the banner and `os.execvp` the claude binary with:
   - `--plugin-dir ~/.workforce/plugin` (built from the packaged plugin by `plugin_runtime.prepare`, with `sys.executable` written into `.mcp.json` and `hooks/hooks.json`)
-  - `--settings <json>`: only `{"statusLine": {"type": "command", "command": "<venv python> -m workforce.team.statusline"}}`
+  - `--settings <json>`: only `{"statusLine": {"type": "command", "command": "<python> -m workforce.team.statusline"}, "env": {...}}`
   - `--append-system-prompt "<contents of the plugin's TEAM.md>"`
   - then all the user's args unchanged (so `wf "task"`, `wf --resume`, `wf -c` all work like `claude`).
-- Refuse (clear message, exit 3) if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `OPENAI_API_KEY` is set. The binaries come from `~/.workforce/team.toml` (created with defaults on first run: `claude = "~/.local/bin/claude"`, `codex = "/opt/homebrew/bin/codex"`).
-- `workforce` (the long name) keeps the old CLI unchanged.
+- Refuse (clear message, exit 3) if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `OPENAI_API_KEY` is set. The binaries come from `~/.workforce/team.toml` (created on first run with the paths `detect.find_cli` found; `config.repair_binaries` updates a path that stopped working).
+- `workforce` is another name for `wf`.
 
 ### 2b. MCP server "codex" (`workforce/team/mcp_server.py`, stdio JSON-RPC, no new deps)
 Implement the MCP stdio protocol by hand: `initialize`, `tools/list`, `tools/call`, `notifications/initialized`, `ping`. Tools (the working dir is the process cwd = the user's project dir, via `${CLAUDE_PROJECT_DIR}` or cwd):

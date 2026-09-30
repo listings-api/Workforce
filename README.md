@@ -317,7 +317,7 @@ uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -e ".[de
 
 The live scripts use a throwaway repo and cheap models by default, so they use a little of your subscription quota.
 
-**The older unattended pipeline** is still included: `wf run "<goal>"` works through a goal without you at the keyboard, in separate git worktrees. See [docs/USAGE.md](docs/USAGE.md) for it and for every detail of the settings. The design notes are in [docs/SPEC-TEAM-CLI.md](docs/SPEC-TEAM-CLI.md) and [docs/SPEC.md](docs/SPEC.md).
+More detail on every command and setting is in [docs/USAGE.md](docs/USAGE.md), and the design notes are in [docs/SPEC-TEAM-CLI.md](docs/SPEC-TEAM-CLI.md).
 
 ## License
 

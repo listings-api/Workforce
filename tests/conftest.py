@@ -36,26 +36,3 @@ def git_repo(tmp_path: Path) -> Path:
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "initial")
     return repo
-
-
-@pytest.fixture
-def git_workspace(tmp_path: Path) -> Path:
-    """`tmp_path/ws` holding repos `alpha`, `beta` and `tools/gamma` (one commit each) plus a non-repo `notes/`.
-
-    Signing is disabled locally in these temp repos only (test-only; never in a real repo).
-    """
-    ws = tmp_path / "ws"
-    ws.mkdir()
-    for name in ("alpha", "beta", "tools/gamma"):
-        repo = ws / name
-        repo.mkdir(parents=True)
-        _git(repo, "init", "-b", "main")
-        _git(repo, "config", "user.name", "Test User")
-        _git(repo, "config", "user.email", "test@example.com")
-        _git(repo, "config", "commit.gpgsign", "false")
-        (repo / "README.md").write_text(f"{name}\n")
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-m", "initial")
-    (ws / "notes").mkdir()
-    (ws / "notes" / "todo.txt").write_text("not a repo\n")
-    return ws
