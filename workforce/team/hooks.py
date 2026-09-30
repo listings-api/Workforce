@@ -25,6 +25,8 @@ from workforce.team import gitgate
 
 EVENTS = ("pretooluse", "userpromptsubmit")
 CONTINUE_COMMANDS = ("/wf-continue", "/workforce:wf-continue")
+REVIEW_AGAIN_COMMANDS = ("/wf-review-again", "/workforce:wf-review-again")
+REVIEW_AGAIN_FILE = "review-again.json"
 REVIEWERS = (("claude", "the Claude reviewer (claude_review)"), ("codex", "Codex (codex_review)"))
 _GIT_WORD = re.compile(r"git|gpg|\bgh\b", re.I)
 MAX_OVERRIDES = 8
@@ -210,6 +212,8 @@ def _protect_tool(tool_name: str, tool_input: Mapping[str, Any], home: Path | No
                 "WorkForce blocked this: wf-approvals.json is written only by the WorkForce server "
                 "(claude_review / codex_review), never by the agent."
             )
+        if tool_name in WRITE_TOOLS and os.path.basename(resolved).startswith(REVIEW_AGAIN_FILE):
+            return _deny("WorkForce blocked this: only the user can allow more review rounds, by typing /wf-review-again.")
         if tool_name in WRITE_TOOLS and os.path.basename(resolved).startswith("plan-reviews.json"):
             return _deny("WorkForce blocked this: plan-reviews.json is written only by the WorkForce server (codex_plan_review), never by the agent.")
         if tool_name in WRITE_TOOLS and os.path.basename(resolved) == "REVIEW-LOG.md" and "/plans/" in resolved.replace(os.sep, "/"):
@@ -343,6 +347,22 @@ def _is_continue(prompt: str) -> bool:
     return bool(words) and words[0] in CONTINUE_COMMANDS
 
 
+def _allow_more_reviews(cwd: str, home: Path | None) -> str:
+    """Record that the user typed /wf-review-again, which lifts the review round limit for this project."""
+    from workforce.team import config, relay
+
+    try:
+        folder = relay.ensure_team_dir(cwd)
+        config.atomic_write(folder / REVIEW_AGAIN_FILE, json.dumps({"at": time.time()}))
+    except OSError as exc:
+        _log_exception(home, "userpromptsubmit:review-again", exc)
+        return f"WorkForce could not record /wf-review-again ({exc}). Tell the user."
+    return (
+        "WorkForce: the user allowed more review rounds (/wf-review-again). The round limit is reset: run claude_review "
+        "and codex_review on the current changes again, and follow the user's instructions on the disputed findings."
+    )
+
+
 def _apply_override(home: Path | None, now: float | None) -> str:
     from workforce.team import usage_cache
 
@@ -451,6 +471,9 @@ def evaluate(
     """The hook's JSON output for `payload`, or None to allow silently."""
     env = os.environ if env is None else env
     if event == "userpromptsubmit":
+        prompt = payload.get("prompt")
+        if isinstance(prompt, str) and prompt.strip().split(None, 1)[:1] and prompt.strip().split(None, 1)[0] in REVIEW_AGAIN_COMMANDS:
+            return _context(_allow_more_reviews(_cwd(payload, env), home))
         direct = _direct_codex(payload, env, home, now)
         if direct:
             return direct

@@ -12,12 +12,12 @@ Contents: [`wf`: Claude Code + Codex](#wf-claude-code--codex) · [Commands](#com
 cd ~/code/billing
 wf                          # the normal Claude Code screen, with Codex added to the team
 wf "fix the flaky test in billing"
-wf --resume                 # or -c, --model, ... : every claude option works as usual
+wf --resume                 # or -c, --model, ...: every claude option works, except -p (WorkForce only runs as a chat)
 ```
 
 `wf` prints a small blue WF banner, then starts your real interactive `claude` with three things added:
 
-- **The `workforce` plugin** (shipped inside the package as `workforce/team/plugin/`; `wf` builds a runnable copy in `~/.workforce/plugin/` on every start and loads it with `--plugin-dir`): a Codex tool server, the `fast-coder` sub-agent, eleven slash commands and two hooks.
+- **The `workforce` plugin** (shipped inside the package as `workforce/team/plugin/`; `wf` builds a runnable copy in `~/.workforce/plugin/` on every start and loads it with `--plugin-dir`): a Codex tool server, the `fast-coder` sub-agent, twelve slash commands and two hooks.
 - **A status line**: `WF │ Claude 5h 23% · wk 44% │ Codex wk 3% │ codex gpt-6-sol·high`. Yellow from 50%, red from 60%. `?` means Claude Code did not report that number; `~` after a Codex number means the last reading is more than 2 minutes old (a background refresh is on its way).
 - **Team rules** appended to Claude's system prompt (`TEAM.md` in the plugin).
 
@@ -44,6 +44,7 @@ Everything else is Claude Code as you know it: the same input box, permissions, 
 | `/codex-model [model] [effort]` | A menu of the models Codex lists for your account (read live, cached for an hour) and their efforts; pick with the arrow keys. Or give them directly: `/codex-model gpt-6-astra xhigh`. A model Codex doesn't list, or an effort it doesn't support, is refused. Saved in `~/.workforce/team.toml`. Defaults: `gpt-6-sol`, `high`. |
 | `/usage` | The Claude and Codex usage windows with alert/stop state. |
 | `/wf-continue` | Overrides the 60% stop for the window(s) that are over it, until they reset. |
+| `/wf-review-again` | After a reviewer rejected the changes 3 times in a row, the review tools stop and Claude asks you what to do. This allows more rounds. Only you can type it. |
 | `/codex-mode [read-only\|write]` | Shows or sets Codex's mode (below). Default `read-only`. |
 | `/claude-model`, `/claude-effort` | A menu for the team's other Claudes: the reviewer behind `claude_review` (applies at the next review) and the `fast-coder` sub-agent (applies the next time `wf` starts). Defaults: `claude-opus-5-5` / `claude-sonnet-5-5`, both `high`. Or give them directly: `/claude-model reviewer claude-opus-5-5 high`. This chat's own Claude is `/model`. |
 | `/wf-settings` | One view of every setting, current usage and the Laya status, with the command that changes each. Shown exactly as the tool returns it. |

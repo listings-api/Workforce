@@ -51,8 +51,7 @@ wf demo                                                             # 3. a sampl
 12. [Where things are stored](#12-where-things-are-stored)
 13. [Troubleshooting](#13-troubleshooting)
 14. [Update or uninstall](#14-update-or-uninstall)
-15. [Does the team pay off?](#15-does-the-team-pay-off)
-16. [License](#license)
+15. [License](#license)
 
 ---
 
@@ -136,7 +135,9 @@ stop_percent = 60
 
 If a program later moves, `wf` finds it again and updates the file. You set the models from menus inside `wf` (section 7), so there's no need to edit those lines by hand.
 
-Every `claude` option still works: `wf "fix the flaky login test"`, `wf -c` (continue), `wf --resume`, `wf --model claude-sonnet-5-5`.
+Every other `claude` option still works: `wf "fix the flaky login test"`, `wf -c` (continue), `wf --resume`, `wf --model claude-sonnet-5-5`.
+
+WorkForce only runs as a chat: `wf -p` / `wf --print` (Claude Code's no-chat mode) is refused, so you can always step in.
 
 ## 5. How a task works
 
@@ -194,6 +195,7 @@ The review gate is a **workflow safeguard**: it stops the team from committing w
 
 **What must happen before a commit**
 
+- **A hard stop on review loops.** If a reviewer rejects the changes 3 times in a row, both review tools stop. Claude doesn't commit; it shows you both positions and the open findings word for word and asks what to do. Only you can allow more rounds, by typing `/wf-review-again` (with your decision, if you like: `/wf-review-again keep the retry, drop the cache`).
 - **Both reviewers approve the exact files.** The Claude reviewer and Codex each review the changes, and both must say APPROVE for exactly the files being committed. Any edit afterwards cancels both approvals. Type `/review` to run both reviews and see whether a commit is allowed.
 - **Reviews are against the current commit.** Each approval records which commit the reviewers compared against, and only a review against the current HEAD counts. A review against an older commit, or one made before a `git pull`, has to be redone.
 - **Commit in a command of its own.** A command that changes files and then commits (`format && git commit`, `echo … > file && git commit`) is refused, because those changes would go in unreviewed. Make the change, run `/review`, then commit. `git add -A && git commit …` is fine.
@@ -257,6 +259,7 @@ The status line shows your Claude 5-hour and weekly usage, and Codex's usage.
 | `/usage` | Claude and Codex usage windows |
 | `/wf-settings` | Every setting in one view |
 | `/wf-continue` | Carry on past a 60% stop until that window resets |
+| `/wf-review-again` | Allow more review rounds after a reviewer rejected the changes 3 times in a row |
 | `wf codex` (in a terminal) | Open the team's Codex conversation in Codex's own app |
 
 The plugin commands also work with a prefix, for example `/workforce:codex-model`, if a name clashes with another plugin.
@@ -284,6 +287,7 @@ The plugin commands also work with a prefix, for example `/workforce:codex-model
 | `claude not found at …` or `codex not found at …` | Install it (section 1), or put its path in `~/.workforce/team.toml` (`which claude`, `which codex`). |
 | Codex tools fail with a login error | Run `codex login` again, then `codex login status`. |
 | `/codex-model` shows only the current model | Codex's model list couldn't be read (it prints why). Check `codex login status`; you can still type a model directly. |
+| Reviews stopped: "round limit reached" | A reviewer rejected the changes 3 times in a row. Decide which way to go, tell Claude, and type `/wf-review-again`. |
 | A commit is blocked | Read the reason. Usually you need `/review`, files changed after the review (a formatter hook counts), or the review was against an older commit. Run `/review` again, then commit in a command of its own. |
 | Everything is paused | A usage window reached 60%. Wait for the reset time shown, or type `/wf-continue`. |
 
@@ -299,12 +303,6 @@ rm -rf ~/.workforce                # optional: remove settings, logs and approva
 
 Claude Code and Codex are left exactly as they were.
 
-## 15. Does the team pay off?
-
-Two reviewers per commit cost time and quota. [docs/BENCHMARK.md](docs/BENCHMARK.md) compares the team with Claude Code alone on small tasks with hidden bugs: completion time, quota used, and whether the bugs were caught. It includes a script to rerun it with your own models.
-
-A first small pilot (4 tasks, one run each, cheap models) found the team caught more of the hidden bugs (2 of 4 vs 1 of 4) but took about six times as long, and 2 of its 4 runs timed out while the reviewers kept asking for changes. That's far too small a sample to conclude anything; treat it as a starting point and measure on your own work.
-
 ---
 
 ## For developers
@@ -315,7 +313,6 @@ uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -e ".[de
 .venv/bin/pytest -q                                   # the full suite, with fake claude/codex; no network, no quota
 .venv/bin/python scripts/team_livetest.py             # live checks against your real claude and codex
 .venv/bin/python scripts/context_livetest.py          # live check that long sessions keep their context
-.venv/bin/python scripts/benchmark.py --help          # team vs one agent
 ```
 
 The live scripts use a throwaway repo and cheap models by default, so they use a little of your subscription quota.

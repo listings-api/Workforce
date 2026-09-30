@@ -158,6 +158,11 @@ def main(
         return subcommand_main(args[0], args[1:])
     if args and args[0] == "codex":
         return codex_main(args[1:], home=home, environ=environ, execvp=execvp)
+    if any(arg in PRINT_FLAGS for arg in args):
+        return _error(
+            "WorkForce only runs as a chat, so `wf -p` / `wf --print` is not supported. "
+            'Start `wf`, optionally with your first message: wf "fix the failing test".'
+        )
     bad = api_key_vars(environ)
     if bad:
         return _error(

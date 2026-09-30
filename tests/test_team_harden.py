@@ -771,12 +771,11 @@ def test_no_banner_when_stdout_is_not_a_terminal(launch_setup):
 
 
 @pytest.mark.parametrize("flag", ["-p", "--print"])
-def test_no_banner_in_print_mode_even_on_a_terminal(launch_setup, flag):
+def test_print_mode_is_refused_because_workforce_only_runs_as_a_chat(launch_setup, flag, capsys):
     out = Tty()
-    assert launch_run(launch_setup, [flag, "hello"], stdout=out) == 0
-    assert out.getvalue() == ""
-    (_, argv), = launch_setup[3]
-    assert argv[-2:] == [flag, "hello"]
+    assert launch_run(launch_setup, [flag, "hello"], stdout=out) == 3
+    assert "only runs as a chat" in capsys.readouterr().err
+    assert out.getvalue() == "" and launch_setup[3] == []
 
 
 def test_the_banner_is_still_printed_on_a_terminal(launch_setup):
@@ -791,8 +790,8 @@ def test_no_color_prints_the_banner_without_ansi(launch_setup):
     assert "WorkForce" in out.getvalue() and "\x1b" not in out.getvalue()
 
 
-def test_wf_print_mode_piped_has_clean_stdout(tmp_path):
-    """`wf -p …` through a pipe: the only stdout is what claude printed."""
+def test_wf_output_through_a_pipe_has_no_banner(tmp_path):
+    """`wf "task"` through a pipe (not a terminal): the only stdout is what claude printed."""
     home = tmp_path / "home"
     (home / ".workforce").mkdir(parents=True)
     stub = tmp_path / "claude"
@@ -800,7 +799,7 @@ def test_wf_print_mode_piped_has_clean_stdout(tmp_path):
     stub.chmod(0o755)
     (home / ".workforce" / "team.toml").write_text(f'claude = "{stub}"\ncodex = "/x/codex"\n')
     done = subprocess.run(
-        [sys.executable, "-m", "workforce.team.launch", "-p", "hi"],
+        [sys.executable, "-m", "workforce.team.launch", "hi"],
         capture_output=True, text=True, timeout=60, cwd=ROOT,
         env={"PATH": "/usr/bin:/bin", "HOME": str(home), "PYTHONPATH": str(ROOT), "PYTHONDONTWRITEBYTECODE": "1"},
     )

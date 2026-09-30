@@ -35,6 +35,8 @@ LAYA_CONFIDENCE = 0.85
 LAYA_KEY = "task_size"
 ASK_TIMEOUT_S = 600
 REVIEW_TIMEOUT_S = 1200
+REVIEW_REJECTIONS = 3
+REVIEW_AGAIN_FILE = "review-again.json"
 DIFF_LIMIT = 60_000
 CODEX_CACHE_TTL_S = 120
 LOG_FIELD_CHARS = 500
@@ -222,6 +224,8 @@ class Server:
     def __init__(self, home: Path | None = None):
         self.home = home
         self.log_lock = threading.Lock()
+        self.rejections: dict[tuple[str, str], int] = {}
+        self.review_again_seen = 0.0
 
     def cwd(self) -> Path:
         return project_dir()
@@ -396,9 +400,28 @@ class Server:
         }
         return tree, fields, base, len(diff) > DIFF_LIMIT, base_sha
 
+    def _check_round_limit(self, cwd: Path, reviewer: str) -> None:
+        """Refuse a review after REVIEW_REJECTIONS rejections in a row from this reviewer, until the user types /wf-review-again."""
+        marker = relay.team_dir(self.cwd()) / REVIEW_AGAIN_FILE
+        try:
+            allowed_at = float(json.loads(marker.read_text(encoding="utf-8")).get("at", 0))
+        except (OSError, ValueError, AttributeError, TypeError):
+            allowed_at = 0.0
+        if allowed_at > self.review_again_seen:
+            self.review_again_seen = allowed_at
+            self.rejections.clear()
+        if self.rejections.get((reviewer, str(cwd)), 0) >= REVIEW_REJECTIONS:
+            raise ToolError(
+                f"review round limit reached: the {reviewer} reviewer rejected the changes {REVIEW_REJECTIONS} times in a row. "
+                "Stop now and do not commit. Show the user both positions and the open findings (quote them verbatim) and ask "
+                "how to proceed. Only the user can allow more review rounds, by typing /wf-review-again."
+            )
+
     def _finish_review(self, cwd: Path, reviewer: str, verdict: dict, tree: str, truncated: bool, note: str, base_sha: str) -> dict:
         """Record the server-run reviewer's verdict for `tree` against `base_sha` and report it with the resulting commit status."""
         recorded_verdict, summary = _consistent(verdict["verdict"], verdict["summary"], verdict["findings"])
+        key = (reviewer, str(cwd))
+        self.rejections[key] = 0 if recorded_verdict == "APPROVE" else self.rejections.get(key, 0) + 1
         approvals.record(cwd, reviewer, recorded_verdict, summary, verdict["findings"], tree=tree, home=self.home, base=base_sha)
         status = approvals.status(cwd, self.home)
         stale = status["tree"] != tree
@@ -425,6 +448,7 @@ class Server:
 
     def tool_codex_review(self, args: dict) -> dict:
         cwd = self._repo(args)
+        self._check_round_limit(cwd, "codex")
         cfg = self._cfg()
         model, effort = _codex_settings(cfg, args)
         tree, fields, base, truncated, base_sha = self._review_material(cwd, args)
@@ -437,6 +461,7 @@ class Server:
 
     def tool_claude_review(self, args: dict) -> dict:
         cwd = self._repo(args)
+        self._check_round_limit(cwd, "claude")
         cfg = self._cfg()
         tree, fields, base, truncated, base_sha = self._review_material(cwd, args)
         prompt = claude_review.build_prompt(**fields)

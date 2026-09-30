@@ -372,6 +372,8 @@ def protects_approvals(command: str) -> str | None:
         return "uses the approvals module directly; only the WorkForce server records reviews (claude_review / codex_review)"
     if "wf-approvals" in squashed and not risk.is_read_only("Bash", {"command": command}):
         return "may write wf-approvals.json; review approvals are recorded only by the WorkForce server (claude_review / codex_review)"
+    if "review-again" in squashed and not risk.is_read_only("Bash", {"command": command}):
+        return "may write the review-again marker; only the user can allow more review rounds, by typing /wf-review-again"
     if "plan-reviews.json" in squashed and not risk.is_read_only("Bash", {"command": command}):
         return "may write plan-reviews.json; plan reviews are recorded only by the WorkForce server (codex_plan_review)"
     return None

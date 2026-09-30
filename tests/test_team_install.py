@@ -184,7 +184,7 @@ def test_uv_tool_install_gives_a_working_wf_and_a_plugin_that_uses_that_tool_pyt
     fake_claude.chmod(0o755)
     (home / ".workforce").mkdir()
     (home / ".workforce" / "team.toml").write_text(f'claude = "{fake_claude}"\ncodex = "/x/codex"\n')
-    started = subprocess.run([str(bin_dir / "wf"), "-p", "hi"], capture_output=True, text=True, env=env, cwd=tmp_path)
+    started = subprocess.run([str(bin_dir / "wf"), "hi"], capture_output=True, text=True, env=env, cwd=tmp_path)
     assert started.returncode == 0, started.stderr
     mcp = json.loads((home / ".workforce" / "plugin" / ".mcp.json").read_text())
     command = mcp["mcpServers"]["codex"]["command"]
