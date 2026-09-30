@@ -81,6 +81,26 @@ def _cwd(payload: Mapping[str, Any], env: Mapping[str, str]) -> str:
     return cwd if isinstance(cwd, str) and cwd else env.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
+def _project_dir(payload: Mapping[str, Any], env: Mapping[str, str]) -> str:
+    """The folder Claude may change files in: the project Claude Code was started in, wherever it has moved since."""
+    root = env.get("CLAUDE_PROJECT_DIR")
+    return root if isinstance(root, str) and root else _cwd(payload, env)
+
+
+def _denylist(tool_name: str, tool_input: Mapping[str, Any], payload: Mapping[str, Any], env: Mapping[str, str]) -> dict[str, Any] | None:
+    """The hard deny-list: no credential reads, no writes outside the project folder or a temp folder, no force-push or signing bypass."""
+    from workforce.team import denylist
+
+    project = _project_dir(payload, env)
+    reason = denylist.denylist_reason(tool_name, tool_input, _cwd(payload, env), project, Path.home(), mode=denylist.MODE_COMMITTER)
+    if not reason:
+        return None
+    return _deny(
+        f"WorkForce blocked this: {reason}. Claude never reads credential files, and changes files only inside the "
+        f"project folder ({project}) or a temp folder. If this step is needed, the user does it by hand."
+    )
+
+
 def _missing(status: Mapping[str, Any]) -> list[str]:
     listed = [str(item) for item in status.get("missing") or []]
     if any("bad signature" in item or "reviewed against" in item for item in listed):
@@ -505,6 +525,14 @@ def evaluate(
             if decision:
                 return decision
             decision = _bash_decision(tool_input["command"], _cwd(payload, env), home, env)
+            if decision:
+                return decision
+        if isinstance(tool_name, str) and tool_name:
+            try:
+                decision = _denylist(tool_name, tool_input, payload, env)
+            except Exception as exc:
+                _log_exception(home, "pretooluse:denylist", exc)
+                decision = None
             if decision:
                 return decision
     return _usage_pretool(home, now)

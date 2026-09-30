@@ -299,3 +299,65 @@ def test_usage_errors_fail_open(home, monkeypatch):
 def test_stop_does_not_hide_the_commit_gate_reason(git_repo, home):
     set_usage(home, five=90)
     assert "/review" in denied(pre("git commit -m x", git_repo, home))
+
+
+# ------------------------------------------------------------------ the hard deny-list applies to every tool call
+
+
+def payload_for(tool, tool_input, cwd):
+    return {"tool_name": tool, "tool_input": tool_input, "cwd": str(cwd)}
+
+
+@pytest.mark.parametrize(
+    "command, needle",
+    [
+        ("cat ~/.codex/auth.json", "auth.json"),
+        ("cat ~/.claude/.credentials.json", "credentials"),
+        ("security find-generic-password -s 'Claude Code-credentials' -w", "credentials"),
+        ("rm -rf /opt/wf-outside", "outside"),
+        ("echo x > /opt/wf-outside/notes.txt", "outside"),
+        ("cp README.md /opt/wf-outside/", "outside"),
+        ("cd /tmp && rm -rf wf-scratch", "outside"),
+    ],
+)
+def test_credential_reads_and_writes_outside_the_project_are_refused(git_repo, home, command, needle):
+    reason = denied(pre(command, git_repo, home))
+    assert needle in reason and "project folder" in reason
+
+
+@pytest.mark.parametrize(
+    "tool, tool_input, needle",
+    [
+        ("Read", {"file_path": "~/.ssh/id_rsa"}, "ssh"),
+        ("Read", {"file_path": "/Users/someone/.codex/auth.json"}, "auth.json"),
+        ("Grep", {"pattern": "BEGIN", "path": "~/.ssh"}, "ssh"),
+        ("Write", {"file_path": "/opt/wf-outside/notes.txt", "content": "x"}, "outside"),
+        ("Edit", {"file_path": "/opt/wf-outside/notes.txt", "old_string": "a", "new_string": "b"}, "outside"),
+    ],
+)
+def test_file_tools_follow_the_same_rules(git_repo, home, tool, tool_input, needle):
+    assert needle in denied(hooks.evaluate("pretooluse", payload_for(tool, tool_input, git_repo), env={}, home=home, now=NOW))
+
+
+@pytest.mark.parametrize(
+    "tool, tool_input",
+    [
+        ("Read", {"file_path": "~/.claude/settings.json"}),
+        ("Write", {"file_path": "src/new.py", "content": "x"}),
+        ("Write", {"file_path": "/tmp/scratch.txt", "content": "x"}),
+        ("Bash", {"command": "rm -rf build node_modules"}),
+        ("Bash", {"command": "rm /tmp/scratch.txt"}),
+        ("Bash", {"command": "cat ~/.zshrc"}),
+        ("Bash", {"command": "git status && git diff"}),
+    ],
+)
+def test_ordinary_reads_and_writes_inside_the_project_or_a_temp_folder_are_allowed(git_repo, home, tool, tool_input):
+    assert hooks.evaluate("pretooluse", payload_for(tool, tool_input, git_repo), env={}, home=home, now=NOW) is None
+
+
+def test_the_project_folder_is_where_claude_code_started_even_after_a_cd(home):
+    env = {"CLAUDE_PROJECT_DIR": "/opt/wf-project"}
+    inside = {"tool_name": "Write", "tool_input": {"file_path": "../other.txt", "content": "x"}, "cwd": "/opt/wf-project/sub"}
+    assert hooks.evaluate("pretooluse", inside, env=env, home=home, now=NOW) is None
+    outside = {"tool_name": "Write", "tool_input": {"file_path": "/opt/elsewhere/x.txt", "content": "x"}, "cwd": "/opt/wf-project/sub"}
+    assert "outside" in denied(hooks.evaluate("pretooluse", outside, env=env, home=home, now=NOW))
