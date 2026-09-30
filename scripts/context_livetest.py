@@ -28,7 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-PLUGIN = ROOT / "wf-plugin"
+PLUGIN = ROOT
 API_KEY_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY")
 MODULES = 30
 
@@ -258,6 +258,7 @@ def part_b(repo: Path, wf_home: Path, model: str) -> None:
 
 
 def main() -> int:
+    global PLUGIN
     parser = argparse.ArgumentParser()
     parser.add_argument("--codex-model", default="gpt-6-luna")
     parser.add_argument("--codex-effort", default="low")
@@ -273,6 +274,9 @@ def main() -> int:
     try:
         repo = make_repo(base)
         wf_home = make_wf_home(base, opts.codex_model, opts.codex_effort, opts.claude_model)
+        from workforce.team import plugin_runtime
+
+        PLUGIN = plugin_runtime.prepare(wf_home)
         for part, fn, args in (("a", part_a, (repo, wf_home)), ("b", part_b, (repo, wf_home, opts.claude_model))):
             if opts.part in (part, "both"):
                 print(f"Part {part.upper()}", flush=True)

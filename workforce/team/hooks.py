@@ -2,7 +2,8 @@
 
 PreToolUse: the commit gate (`git commit` and every other command that writes history needs both reviewers' APPROVE for
 the exact tree that would be committed; history rewrites are refused), the protection of the signed approvals and their
-key, the always-deny list (no signing bypass, no force-push) and the usage stop. UserPromptSubmit: the usage stop, the
+key, the scan of written and run scripts for bypass words, the always-deny list (no signing bypass, no force-push) and the
+usage stop. UserPromptSubmit: the usage stop, the
 usage alert, the `/wf-continue` override and the `@codex` relay.
 
 Errors fail CLOSED for commit checks (deny with the reason) and OPEN for everything else, so a bug here never bricks the
@@ -218,6 +219,60 @@ def _protect_tool(tool_name: str, tool_input: Mapping[str, Any], home: Path | No
     return None
 
 
+BYPASS_TAIL = "which can switch off or get around the commit review."
+
+
+def _new_content(tool_input: Mapping[str, Any]) -> list[str]:
+    """The text a Write/Edit/MultiEdit/NotebookEdit call would put into a file."""
+    pieces = [tool_input[key] for key in ("content", "new_string", "new_source") if isinstance(tool_input.get(key), str)]
+    for edit in tool_input.get("edits") or []:
+        if isinstance(edit, Mapping):
+            pieces.extend(edit[key] for key in ("new_string", "new_source") if isinstance(edit.get(key), str))
+    return pieces
+
+
+def _scan_write(tool_name: str, tool_input: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Deny writing code that carries a commit-review bypass; prose files (.md, .txt, .rst) may mention these words."""
+    from workforce.team import scriptscan
+
+    if tool_name not in WRITE_TOOLS:
+        return None
+    from workforce.decider import hooks as risk
+
+    paths = risk._file_paths(tool_input)
+    if paths and all(scriptscan.is_doc(path) for path in paths):
+        return None
+    for text in _new_content(tool_input):
+        found = scriptscan.scan_text(text)
+        if found:
+            return _deny(
+                f"WorkForce blocked writing this file: it contains {found}, {BYPASS_TAIL} "
+                "If you really need it, ask the user to make this change by hand."
+            )
+    return None
+
+
+def _scan_scripts(command: str, cwd: str) -> dict[str, Any] | None:
+    """Deny a Bash command that runs a script (or build file) containing a bypass, or names a script it may be creating in the same command."""
+    from workforce.team import scriptscan
+
+    for path in scriptscan.scripts_run_by(command, cwd):
+        found = scriptscan.scan_file(path)
+        if found:
+            return _deny(
+                f"WorkForce blocked this command: {path.name} contains {found}, {BYPASS_TAIL} "
+                "If you really need it, ask the user to run it by hand."
+            )
+    missing = scriptscan.missing_scripts(command, cwd)
+    found = scriptscan.scan_text(command) if missing else None
+    if found:
+        return _deny(
+            f"WorkForce blocked this command: it runs {missing[0].name}, which it may be writing itself, and the command contains {found}, "
+            f"{BYPASS_TAIL} If you really need it, ask the user to run it by hand."
+        )
+    return None
+
+
 def _bash_decision(command: str, cwd: str, home: Path | None, env: Mapping[str, str] | None = None) -> dict[str, Any] | None:
     try:
         protected = _protect_bash(command)
@@ -411,7 +466,21 @@ def evaluate(
                 decision = None
             if decision:
                 return decision
+            try:
+                decision = _scan_write(tool_name, tool_input)
+            except Exception as exc:
+                _log_exception(home, "pretooluse:scriptscan", exc)
+                decision = None
+            if decision:
+                return decision
         if tool_name == "Bash" and isinstance(tool_input.get("command"), str):
+            try:
+                decision = _scan_scripts(tool_input["command"], _cwd(payload, env))
+            except Exception as exc:
+                _log_exception(home, "pretooluse:scriptscan", exc)
+                decision = None
+            if decision:
+                return decision
             decision = _bash_decision(tool_input["command"], _cwd(payload, env), home, env)
             if decision:
                 return decision

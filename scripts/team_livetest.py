@@ -27,8 +27,8 @@ from pathlib import Path
 from typing import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
-PY = ROOT / ".venv" / "bin" / "python"
-PLUGIN = ROOT / "wf-plugin"
+PY = Path(sys.executable)
+PLUGIN = ROOT
 HAIKU = "claude-haiku-4-5-20251001"
 TOOL_NAMES = [
     "codex_plan",
@@ -310,7 +310,7 @@ def deny_evidence(stream: str) -> str | None:
 @check("1. plugin loads (claude -p lists the 8 MCP tools)")
 def check_plugin_loads(repo: Path):
     if not (PLUGIN / ".claude-plugin" / "plugin.json").is_file():
-        raise Skip("wf-plugin/.claude-plugin/plugin.json is missing")
+        raise Skip(".claude-plugin/plugin.json is missing from the prepared plugin")
     done = run_claude(
         repo,
         f"List the MCP tools whose names start with {PLUGIN_PREFIX}, one per line, nothing else.",
@@ -519,7 +519,7 @@ def check_launcher(home: Path):
 
     from workforce.team import launch
 
-    plugin, python = launch.plugin_dir(), launch.venv_python()
+    plugin, python = PLUGIN, PY
     team_text = (plugin / launch.TEAM_FILE).read_text()
     argv = launch.build_argv("claude", plugin, python, team_text, [])
     needed = ("--plugin-dir", "--settings", "--append-system-prompt")
@@ -556,13 +556,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Live checks for the wf team plugin (real claude/codex, subscription only).")
     parser.add_argument("--keep", action="store_true", help="keep the temp repo and home instead of deleting them")
     args = parser.parse_args()
-    if not PY.is_file():
-        print(f"{PY} is missing; create the venv first.", file=sys.stderr)
-        return 2
+    global PLUGIN
     sys.path.insert(0, str(ROOT))
     base = Path(f"/private/tmp/wf-livetest-{int(time.time())}")
     base.mkdir(parents=True)
     repo, home = make_repo(base), make_home(base)
+    from workforce.team import plugin_runtime
+
+    PLUGIN = plugin_runtime.prepare(home)
     print(f"temp repo: {repo}\ntemp home: {home}\n", flush=True)
     try:
         check_plugin_loads(repo)

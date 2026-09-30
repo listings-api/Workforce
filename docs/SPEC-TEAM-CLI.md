@@ -17,13 +17,13 @@ status line:  WF │ Claude 5h 23% · wk 44% │ Codex wk 3% │ codex gpt-6-sol
 - The **WF banner** is a 4–5 row block-letter "WF" in the logo blue gradient (`#5AA8FF` → `#2F6FE0`), truecolor with a 256-colour fallback. It's printed once before exec'ing claude. Claude Code's own banner can't be changed (confirmed in its docs), so ours sits above it.
 - Everything else is Claude Code: same input box, permissions, `/model`, shift+tab, sub-agents, git.
 
-## 2. Pieces (all new code under `workforce/team/` and `wf-plugin/`)
+## 2. Pieces (all code under `workforce/team/`; the plugin is package data in `workforce/team/plugin/`)
 
 ### 2a. Launcher (`workforce/team/launch.py`, entry point `wf`)
 - `wf [args…]`: if the first arg is an old pipeline subcommand (`run status usage questions answer models pause resume log init repos publish`), delegate to the old `workforce.cli.main`. Otherwise print the banner and `os.execvp` the claude binary with:
-  - `--plugin-dir <agent-team>/wf-plugin`
+  - `--plugin-dir ~/.workforce/plugin` (built from the packaged plugin by `plugin_runtime.prepare`, with `sys.executable` written into `.mcp.json` and `hooks/hooks.json`)
   - `--settings <json>`: only `{"statusLine": {"type": "command", "command": "<venv python> -m workforce.team.statusline"}}`
-  - `--append-system-prompt "<contents of wf-plugin/TEAM.md>"`
+  - `--append-system-prompt "<contents of the plugin's TEAM.md>"`
   - then all the user's args unchanged (so `wf "task"`, `wf --resume`, `wf -c` all work like `claude`).
 - Refuse (clear message, exit 3) if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `OPENAI_API_KEY` is set. The binaries come from `~/.workforce/team.toml` (created with defaults on first run: `claude = "~/.local/bin/claude"`, `codex = "/opt/homebrew/bin/codex"`).
 - `workforce` (the long name) keeps the old CLI unchanged.
@@ -54,9 +54,9 @@ Implement the MCP stdio protocol by hand: `initialize`, `tools/list`, `tools/cal
 - `status(cwd) -> {tree, claude, codex, commit_allowed, missing}`
 - commit allowed ⇔ both are APPROVE for the current tree.
 
-### 2d. Plugin `wf-plugin/`
+### 2d. Plugin (`workforce/team/plugin/`)
 - `.claude-plugin/plugin.json`: name `workforce`.
-- `.mcp.json`: server `codex` → `<venv python> -m workforce.team.mcp_server` (absolute path to the venv python, written by `wf` at launch; or use `${CLAUDE_PLUGIN_ROOT}/../.venv/bin/python`).
+- `.mcp.json`: server `codex` → `<python> -m workforce.team.mcp_server`, where `<python>` is `sys.executable`, written by `wf` into the prepared copy at launch.
 - `agents/`:
   - `fast-coder.md`: `model: claude-sonnet-5-5`, for small, well-specified sub-tasks.
 - `commands/`:

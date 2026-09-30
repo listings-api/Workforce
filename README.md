@@ -21,118 +21,108 @@ WF │ Claude 5h 12% · wk 40% │ Codex wk 8% │ claude Opus 5.5·high │ cod
 
 `wf` starts the official `claude` program with a plugin added, and the plugin calls the official `codex` program. Neither program is changed: plain `claude` and plain `codex` keep working exactly as before.
 
+## Try it in a few minutes
+
+You need Claude Code and the Codex CLI installed and signed in with your subscriptions (steps 1 and 2 below), and [uv](https://docs.astral.sh/uv/).
+
+```sh
+uv tool install git+https://github.com/listings-api/Workforce.git   # 1. install wf
+wf doctor                                                           # 2. check the setup
+wf demo                                                             # 3. a sample task in a throwaway project
+```
+
+`wf doctor` checks everything WorkForce needs and prints a fix for anything missing. It uses no model quota. `wf demo` creates a tiny project with one failing test in `~/workforce-demo` and starts `wf` there with the task "fix the failing test". You watch Codex plan, Claude fix it, both review, and the team commit. It uses a little of your Claude and ChatGPT quota.
+
 ---
 
 ## Contents
 
-1. [What you need](#1-what-you-need)
-2. [Install Claude Code and Codex](#2-install-claude-code-and-codex)
-3. [Connect your accounts](#3-connect-your-accounts)
-4. [Install WorkForce](#4-install-workforce)
-5. [First run](#5-first-run)
-6. [How a task works](#6-how-a-task-works)
-7. [Talking to Codex directly](#7-talking-to-codex-directly)
-8. [Choosing models and efforts](#8-choosing-models-and-efforts)
-9. [Commits and the review gate](#9-commits-and-the-review-gate)
-10. [Big tasks: `/plan-loop`](#10-big-tasks-plan-loop)
-11. [Usage limits](#11-usage-limits)
-12. [All commands](#12-all-commands)
-13. [Where things are stored](#13-where-things-are-stored)
-14. [Troubleshooting](#14-troubleshooting)
-15. [Update or uninstall](#15-update-or-uninstall)
+1. [Install Claude Code and Codex](#1-install-claude-code-and-codex)
+2. [Connect your accounts](#2-connect-your-accounts)
+3. [Install WorkForce](#3-install-workforce)
+4. [First run](#4-first-run)
+5. [How a task works](#5-how-a-task-works)
+6. [Talking to Codex directly](#6-talking-to-codex-directly)
+7. [Choosing models and efforts](#7-choosing-models-and-efforts)
+8. [Commits and the review gate](#8-commits-and-the-review-gate)
+9. [Big tasks: `/plan-loop`](#9-big-tasks-plan-loop)
+10. [Usage limits](#10-usage-limits)
+11. [All commands](#11-all-commands)
+12. [Where things are stored](#12-where-things-are-stored)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Update or uninstall](#14-update-or-uninstall)
+15. [Does the team pay off?](#15-does-the-team-pay-off)
 16. [License](#license)
 
 ---
 
-## 1. What you need
+## 1. Install Claude Code and Codex
 
-- **Python 3.11** and **[uv](https://docs.astral.sh/uv/)**, to create the virtual environment: `brew install uv`.
-- **git**.
+You need:
+
 - **A Claude subscription** that includes Claude Code (Pro, Max, Team or Enterprise).
 - **A ChatGPT subscription** that includes Codex (Plus, Pro, Business or Enterprise).
+- **git** 2.31 or newer (2.38 or newer is best).
 - Optional: [Ollaya](https://github.com/ollaya-dev/ollaya) with the `laya:en` model, a small local model that gives quick yes/no hints. Everything works without it.
 
-You do **not** need an Anthropic or OpenAI API key. WorkForce refuses to start if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `OPENAI_API_KEY` is set, so your subscriptions are always the ones billed.
-
-## 2. Install Claude Code and Codex
-
-**Claude Code:** follow the official install guide at <https://code.claude.com/docs/en/setup>. The native installer puts it at `~/.local/bin/claude`, which is where WorkForce looks by default. Then check the version:
+**Claude Code:** follow the official install guide at <https://code.claude.com/docs/en/setup>, then check the version:
 
 ```sh
 claude --version        # 2.1.280 or newer
 ```
 
-**Codex CLI** (Homebrew installs to `/opt/homebrew/bin/codex`):
+**Codex CLI:**
 
 ```sh
-brew install codex      # or: npm install -g @openai/codex
-codex --version         # 0.158 or newer
+npm install -g @openai/codex      # or: brew install codex
+codex --version                   # 0.158 or newer
 ```
 
-If either program ends up somewhere else, that's fine. You'll give WorkForce its path in step 5.
+WorkForce finds both programs by itself, on your PATH or in the usual install folders.
 
-## 3. Connect your accounts
+You do **not** need an Anthropic or OpenAI API key. WorkForce refuses to start if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `OPENAI_API_KEY` is set, so your subscriptions are always the ones used.
 
-Log in to each program once with your subscription. WorkForce never sees your login; it uses whatever these two programs are logged in with.
+## 2. Connect your accounts
 
-**Claude Code:**
-
-```sh
-claude            # on first start it opens a browser to log in; choose your Claude account (not an API key)
-```
-
-Inside Claude Code, `/status` shows the account it is using. Quit with `/exit`.
-
-**Codex:**
+Sign in to each program once with your subscription. WorkForce never sees your login; it uses whatever these two programs are signed in with.
 
 ```sh
+claude            # on first start it opens a browser; choose your Claude account (not an API key). Quit with /exit.
 codex login       # choose "Sign in with ChatGPT"
-codex login status
 ```
 
-Make sure no API key is set in your shell:
+`wf doctor` confirms both are signed in with a subscription.
+
+## 3. Install WorkForce
+
+With [uv](https://docs.astral.sh/uv/) (it brings its own Python if yours is older than 3.11):
 
 ```sh
-env | grep -E 'ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|OPENAI_API_KEY'   # should print nothing
+uv tool install git+https://github.com/listings-api/Workforce.git
 ```
 
-## 4. Install WorkForce
+Or with pipx and Python 3.11+: `pipx install git+https://github.com/listings-api/Workforce.git`.
+
+This puts `wf` (and the long name `workforce`) on your PATH. If your shell says `command not found: wf`, run `uv tool update-shell` (or add `~/.local/bin` to your PATH) and open a new terminal.
+
+Then:
 
 ```sh
-git clone https://github.com/listings-api/Workforce.git ~/agent-team
-cd ~/agent-team
-uv venv --python 3.11 .venv
-uv pip install --python .venv/bin/python -e ".[dev]"
+wf doctor
 ```
 
-Put the `wf` command on your PATH:
-
-```sh
-mkdir -p ~/.local/bin
-ln -sf ~/agent-team/.venv/bin/wf ~/.local/bin/wf
-ln -sf ~/agent-team/.venv/bin/workforce ~/.local/bin/workforce
-```
-
-If your shell then says `command not found: wf`, add this line to `~/.zshrc` and open a new terminal:
-
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Keep the `~/agent-team` folder where it is. The plugin's hooks and its Codex server run from `~/agent-team/.venv`.
-
-## 5. First run
+## 4. First run
 
 ```sh
 cd ~/code/my-app        # any project folder: one git repo, or a folder that holds several repos
 wf
 ```
 
-On the first run WorkForce writes its settings file, `~/.workforce/team.toml`:
+On the first run WorkForce writes its settings file, `~/.workforce/team.toml`, with the paths it found for `claude` and `codex`:
 
 ```toml
-claude = "~/.local/bin/claude"
-codex = "/opt/homebrew/bin/codex"
+claude = "/path/it/found/claude"
+codex = "/path/it/found/codex"
 codex_model = "gpt-6-sol"
 codex_effort = "high"
 codex_mode = "read-only"
@@ -144,13 +134,11 @@ alert_percent = 50
 stop_percent = 60
 ```
 
-If `claude` or `codex` lives somewhere else (`which claude`, `which codex`), put the right path here. You'll set the models from menus inside `wf` (section 8), so there's no need to edit those lines by hand.
-
-Check that it's connected: inside `wf`, type `/wf-settings`. It should list both models and show your current usage for Claude and Codex.
+If a program later moves, `wf` finds it again and updates the file. You set the models from menus inside `wf` (section 7), so there's no need to edit those lines by hand.
 
 Every `claude` option still works: `wf "fix the flaky login test"`, `wf -c` (continue), `wf --resume`, `wf --model claude-sonnet-5-5`.
 
-## 6. How a task works
+## 5. How a task works
 
 Type a task as you would in Claude Code. Claude follows the team rules:
 
@@ -164,7 +152,7 @@ Codex's plans and reviews are shown to you **word for word**. Claude gives its o
 
 In a folder that holds several repos, name the repo in your task ("in `billing`, fix …"). Claude passes it to Codex and to the reviews, and approvals are kept per repo.
 
-## 7. Talking to Codex directly
+## 6. Talking to Codex directly
 
 Start a line with `@codex`:
 
@@ -184,7 +172,7 @@ wf codex
 
 If there's no team Codex conversation yet, it starts a new Codex chat on your chosen model.
 
-## 8. Choosing models and efforts
+## 7. Choosing models and efforts
 
 | To change | Type | What you get |
 |---|---|---|
@@ -200,21 +188,33 @@ You can also type the values directly: `/codex-model gpt-6-astra xhigh`, `/claud
 
 The banner and the status line always show which Claude and Codex models are active. The agents never pick or change a model themselves.
 
-## 9. Commits and the review gate
+## 8. Commits and the review gate
 
-A hook checks every `git` command Claude runs:
+The review gate is a **workflow safeguard**: it stops the team from committing work that both reviewers haven't seen, by accident or by shortcut. It is not a security boundary. Everything runs as your own user, so a determined program could get around it (see the limits below).
 
-- **`git commit` needs both approvals**, from the Claude reviewer and from Codex, for exactly the files being committed. Any edit after the reviews cancels them. Type `/review` to run both reviews and see whether a commit is allowed.
-- **Reviews must be against the current commit.** An approval records which commit the reviewers compared against, and only a review against the current HEAD can allow a commit. A review against an older commit, or one made before a `git pull`, has to be redone.
-- **Commit in a command of its own.** A command that changes files and then commits (`format && git commit`, `echo … > file && git commit`) is refused, because those changes would be unreviewed. Make the change, run `/review`, then commit. `git add -A && git commit …` is fine.
-- **Checked again at commit time.** Inside `wf`, git itself runs a WorkForce check just before each commit: the exact files being committed must match the approved ones. Your repository's own git hooks still run after it, as usual. Skipping it (`--no-verify`, `-c core.hooksPath=…`, clearing the environment) is refused.
-- **The reviews can't be faked.** WorkForce runs both reviewers itself and signs their verdicts. The Claude you chat with can't record or edit an approval.
-- **Both reviewers are read-only.** The Claude reviewer can only read files. Codex runs read-only, with its browser and computer-control add-ons switched off.
-- **Always allowed:** `git pull`, and `git merge origin/master` with nothing staged. They only bring in existing commits. If a merge stops on conflicts, the commit that resolves them needs both reviews.
-- **Needs both reviews:** pointing a branch at a commit that isn't already on it or on a remote branch (`git reset <commit>`, `git branch -f`, `git checkout -B`).
-- **Always refused:** force-push, `rebase`, `git stash`, `commit-tree`, `update-ref`, and `git reset --hard` on `main`/`master`.
+**What must happen before a commit**
 
-## 10. Big tasks: `/plan-loop`
+- **Both reviewers approve the exact files.** The Claude reviewer and Codex each review the changes, and both must say APPROVE for exactly the files being committed. Any edit afterwards cancels both approvals. Type `/review` to run both reviews and see whether a commit is allowed.
+- **Reviews are against the current commit.** Each approval records which commit the reviewers compared against, and only a review against the current HEAD counts. A review against an older commit, or one made before a `git pull`, has to be redone.
+- **Commit in a command of its own.** A command that changes files and then commits (`format && git commit`, `echo … > file && git commit`) is refused, because those changes would go in unreviewed. Make the change, run `/review`, then commit. `git add -A && git commit …` is fine.
+
+**How it's checked** (three layers, all inside `wf` sessions only)
+
+1. **Claude's commands.** A hook reads every command Claude runs, refuses commits without both approvals, and refuses commands that skip the later checks (`--no-verify`, `-c core.hooksPath=…`, `env -i`). It also refuses to write or run scripts that contain those tricks, or that touch the approvals or their key.
+2. **Git's pre-commit step.** Inside `wf`, git runs your repository's own pre-commit hook first (formatters included), then a WorkForce check that the staged files still match the approved ones.
+3. **Every branch update.** Git also runs a WorkForce check whenever a branch moves, and `--no-verify` can't skip it. New commits need both approvals; fast-forwards to existing commits, clean merges of existing history, `git pull` and `git reset` to older commits are allowed.
+
+Your repository's own git hooks keep running as usual. Commits you make yourself, outside `wf`, aren't affected.
+
+**Other rules**
+
+- **Both reviewers are read-only.** The Claude reviewer can only read files. Codex runs read-only, with its browser and computer-control add-ons switched off. Codex can't commit even in write mode, because its sandbox blocks the `.git` folder.
+- **Needs both reviews:** new commits of any kind, including a cherry-pick or revert (use `git cherry-pick -n`, review, then commit), and pointing a branch at a commit that isn't on it or on a remote branch (`git reset <commit>`, `git branch -f`, `git checkout -B`).
+- **Always refused:** force-push, `rebase`, `git stash`, `git commit --amend` (make a new commit instead), `commit-tree`, `update-ref`, and `git reset --hard` on `main`/`master`.
+
+**Known limits.** The checks read commands and files as text, so obfuscated or downloaded code, or a program that talks to git's files directly, can get past them. Approvals are signed with a key in `~/.workforce/team.key`, but that key belongs to your user account like everything else, so the signature stops accidental or casual edits, not a determined agent. If you need a hard guarantee, protect your branches on the server too (required reviews on GitHub or GitLab).
+
+## 9. Big tasks: `/plan-loop`
 
 For a large or risky change, type:
 
@@ -230,9 +230,9 @@ This runs a heavier process, **only when you ask for it**:
 4. **Plan review.** Codex reviews the plan: APPROVED, REVISE or BLOCKED. Claude fixes what's valid, and later rounds continue the same Codex conversation. There are 5 rounds at most (change it with `rounds=<n>`); then you decide. An approval only covers that exact plan, so any edit needs another review. Every round is saved word for word in `REVIEW-LOG.md` next to the plan.
 5. **Build, then the normal two reviews and commit.**
 
-Without `/plan-loop`, the lighter flow from section 6 applies.
+Without `/plan-loop`, the lighter flow from section 5 applies.
 
-## 11. Usage limits
+## 10. Usage limits
 
 The status line shows your Claude 5-hour and weekly usage, and Codex's usage.
 
@@ -241,15 +241,15 @@ The status line shows your Claude 5-hour and weekly usage, and Codex's usage.
 - `@codex` only checks the Codex windows.
 - Change the thresholds with `alert_percent` and `stop_percent` in `~/.workforce/team.toml`.
 
-## 12. All commands
+## 11. All commands
 
 | Command | What it does |
 |---|---|
-| *(just type)* | A task for the team (section 6) |
+| *(just type)* | A task for the team (section 5) |
 | `@codex <text>` | Talk to Codex directly, word for word |
 | `/review` | Run both reviews on the current changes and show whether a commit is allowed |
 | `/plan <task>` | Ask Codex for a plan only |
-| `/plan-loop <task>` | The full plan → review → build process (section 10) |
+| `/plan-loop <task>` | The full plan → review → build process (section 9) |
 | `/codex-model`, `/codex-effort` | Codex's model and effort, from menus |
 | `/claude-model`, `/claude-effort` | The reviewer's and fast coder's model and effort, from menus |
 | `/model` | This chat's Claude (Claude Code's own menu) |
@@ -261,61 +261,61 @@ The status line shows your Claude 5-hour and weekly usage, and Codex's usage.
 
 The plugin commands also work with a prefix, for example `/workforce:codex-model`, if a name clashes with another plugin.
 
-## 13. Where things are stored
+## 12. Where things are stored
 
 | Path | What it is |
 |---|---|
 | `~/.workforce/team.toml` | Your settings |
-| `~/.workforce/team.key` | The key that signs review approvals. Created automatically; keep it private. |
+| `~/.workforce/team.key` | The key that signs review approvals. Created automatically. |
 | `~/.workforce/team.log` | A log of tool calls, with secrets redacted |
 | `~/.workforce/*.json` | Usage and model-list caches |
-| `~/.workforce/git-hooks/` | The commit-time check `wf` points git at inside its sessions. It hands every hook on to your repository's own hooks. |
+| `~/.workforce/plugin/` | The Claude Code plugin `wf` loads, rebuilt on every start from the installed package. |
+| `~/.workforce/git-hooks/` | The pre-commit and branch-update checks `wf` points git at inside its sessions. They hand every hook on to your repository's own hooks. |
 | `<project>/.workforce/team/` | Codex's plans, reviews and replies, word for word; the `@codex` thread; `/plan-loop` plans. It's excluded from git automatically, so it never shows up in `git status`. |
 | `<repo's .git>/wf-approvals.json` | The signed review approvals, per repo. Never committed. |
 
-## 14. Troubleshooting
+## 13. Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| `command not found: wf` | Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` and open a new terminal (step 4). |
+| Something isn't working | Run `wf doctor`. It checks every requirement and prints the fix. |
+| `command not found: wf` | Run `uv tool update-shell`, or add `~/.local/bin` to your PATH, then open a new terminal. |
 | `ANTHROPIC_API_KEY is set …` and `wf` exits | `unset ANTHROPIC_API_KEY` (and the others). Remove it from `~/.zshrc` if it's set there. |
-| `claude not found at …` or `codex not found at …` | Put the right path in `~/.workforce/team.toml` (`which claude`, `which codex`). |
+| `claude not found at …` or `codex not found at …` | Install it (section 1), or put its path in `~/.workforce/team.toml` (`which claude`, `which codex`). |
 | Codex tools fail with a login error | Run `codex login` again, then `codex login status`. |
 | `/codex-model` shows only the current model | Codex's model list couldn't be read (it prints why). Check `codex login status`; you can still type a model directly. |
-| A commit is blocked | Read the reason. Usually you need `/review`, files changed after the review, or the review was against an older commit. Run `/review` again, then commit in a command of its own. |
+| A commit is blocked | Read the reason. Usually you need `/review`, files changed after the review (a formatter hook counts), or the review was against an older commit. Run `/review` again, then commit in a command of its own. |
 | Everything is paused | A usage window reached 60%. Wait for the reset time shown, or type `/wf-continue`. |
-| `.venv/bin/python is missing` | Redo the two `uv` lines from step 4 inside `~/agent-team`. |
 
 Claude Code's own header (the Claude logo and version) still shows under the WF banner. Claude Code has no setting to hide it.
 
-## 15. Update or uninstall
-
-**Update:**
+## 14. Update or uninstall
 
 ```sh
-cd ~/agent-team
-git pull
-uv pip install --python .venv/bin/python -e ".[dev]"
-```
-
-**Uninstall:**
-
-```sh
-rm ~/.local/bin/wf ~/.local/bin/workforce
-rm -rf ~/agent-team ~/.workforce
+uv tool upgrade workforce          # update (pipx: pipx upgrade workforce)
+uv tool uninstall workforce        # uninstall (pipx: pipx uninstall workforce)
+rm -rf ~/.workforce                # optional: remove settings, logs and approvals
 ```
 
 Claude Code and Codex are left exactly as they were.
+
+## 15. Does the team pay off?
+
+Two reviewers per commit cost time and quota. [docs/BENCHMARK.md](docs/BENCHMARK.md) compares the team with Claude Code alone on small tasks with hidden bugs: completion time, quota used, and whether the bugs were caught. It includes a script to rerun it with your own models.
+
+A first small pilot (4 tasks, one run each, cheap models) found the team caught more of the hidden bugs (2 of 4 vs 1 of 4) but took about six times as long, and 2 of its 4 runs timed out while the reviewers kept asking for changes. That's far too small a sample to conclude anything; treat it as a starting point and measure on your own work.
 
 ---
 
 ## For developers
 
 ```sh
-cd ~/agent-team
+git clone https://github.com/listings-api/Workforce.git && cd Workforce
+uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -e ".[dev]"
 .venv/bin/pytest -q                                   # the full suite, with fake claude/codex; no network, no quota
-.venv/bin/python scripts/team_livetest.py             # 8 live checks against your real claude and codex
+.venv/bin/python scripts/team_livetest.py             # live checks against your real claude and codex
 .venv/bin/python scripts/context_livetest.py          # live check that long sessions keep their context
+.venv/bin/python scripts/benchmark.py --help          # team vs one agent
 ```
 
 The live scripts use a throwaway repo and cheap models by default, so they use a little of your subscription quota.

@@ -363,7 +363,7 @@ def test_other_commit_like_commands_need_the_reviews(git_repo, home, command):
 
 @pytest.mark.parametrize(
     "command",
-    ["git merge origin/master", "git merge --no-ff feature", "git cherry-pick abc123", "git revert HEAD", "git pull origin master", "git merge --abort"],
+    ["git merge origin/master", "git merge --no-ff feature", "git pull origin master", "git merge --abort"],
 )
 def test_merging_existing_commits_into_a_clean_index_needs_no_review(git_repo, home, command):
     (git_repo / "wip.py").write_text("unstaged\n")

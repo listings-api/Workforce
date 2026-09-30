@@ -5,7 +5,7 @@ env assignments, wrappers) and returns the git operations that need both reviewe
 Anything that writes history and cannot be parsed fails closed (see `_fallback`).
 
 The gate protects against accidents, not against a determined agent: indirection through arbitrary programs cannot be
-parsed. It is not a substitute for git-level enforcement, which is deliberately not installed in the user's repos.
+parsed. The git-level checks `wf` adds (`workforce.team.githook`) back it up for every git command started inside `wf`.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ DENY_HISTORY = {
 NOTES_READ = frozenset({"list", "show", "get-ref"})
 STASH_SAFE = frozenset({"list", "show", "pop", "apply", "drop", "clear", "branch", "store"})
 BENIGN_FLAGS = frozenset({"--abort", "--quit"})
-CLEAN_OK = frozenset({"merge", "cherry-pick", "revert"})
+CLEAN_OK = frozenset({"merge"})
 TREE_SAFE_GIT = risk.READ_ONLY_GIT | frozenset({"add", "fetch", "remote", "config", "notes", "reflog", "worktree", "stash"})
 SHELL_BUILTINS = frozenset(
     {"cd", "pushd", "popd", "export", "unset", "set", "exit", "return", "read", "sleep", "wait", ":", "[[", "local", "declare", "alias", "true", "false", "test", "["}
@@ -655,6 +655,12 @@ class Analyzer:
             self.analysis.deny = f"the repository this `git {sub}` runs in cannot be resolved (a variable or an unknown directory); use a literal path."
             return
         stage_a = False
+        if sub == "commit" and any(_is_amend(a) for a in args):
+            self.analysis.deny = (
+                "`git commit --amend` is refused: make a new commit instead. An amended commit replaces one that was "
+                "reviewed against a different base."
+            )
+            return
         if "--no-verify" in args or (sub == "commit" and _short_flag(args, "n", COMMIT_VALUE_SHORT)):
             self.analysis.deny = f"`git {sub} --no-verify` skips WorkForce's commit-time review check. Commit without it."
             return
@@ -703,6 +709,12 @@ class Analyzer:
         if _STAGE_ALL_TEXT.search(text):
             op.stage = "working"
         self.analysis.ops.append(op)
+
+
+def _is_amend(token: str) -> bool:
+    """True for `--amend` and its unambiguous abbreviations (`--am`, `--ame`, …)."""
+    name = token.split("=", 1)[0]
+    return len(name) >= 4 and name.startswith("--") and "--amend".startswith(name)
 
 
 def _drop_options(parts: list[str]) -> list[str]:

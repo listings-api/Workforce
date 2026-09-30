@@ -12,8 +12,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
-import workforce
-from workforce.team import agents_gen, banner
+from workforce.team import banner, plugin_runtime
 
 EXIT_OK = 0
 EXIT_PREFLIGHT = 3
@@ -23,23 +22,9 @@ OLD_COMMANDS = frozenset(
 API_KEY_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY")
 STEERING_VARS = ("ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY")
 PRINT_FLAGS = ("-p", "--print")
-PLUGIN_DIRNAME = "wf-plugin"
-TEAM_FILE = "TEAM.md"
+TEAM_FILE = plugin_runtime.TEAM_FILE
+SUBCOMMANDS = {"doctor": "workforce.team.doctor", "demo": "workforce.team.demo"}
 STATUSLINE_MODULE = "workforce.team.statusline"
-
-
-def project_root() -> Path:
-    """The agent-team folder that holds `workforce/`, `wf-plugin/` and `.venv/`."""
-    return Path(workforce.__file__).resolve().parent.parent
-
-
-def plugin_dir(root: Path | None = None) -> Path:
-    return (root or project_root()) / PLUGIN_DIRNAME
-
-
-def venv_python(root: Path | None = None) -> Path:
-    """The interpreter the plugin's hooks and MCP server use: `${CLAUDE_PLUGIN_ROOT}/../.venv/bin/python`."""
-    return (root or project_root()) / ".venv" / "bin" / "python"
 
 
 def settings_json(python: str | Path) -> str:
@@ -125,13 +110,41 @@ def codex_main(
     return EXIT_OK
 
 
+def subcommand_main(name: str, args: Sequence[str]) -> int:
+    """`wf doctor` / `wf demo`: hand the rest of the command line to that module's `main`."""
+    import importlib
+
+    module = SUBCOMMANDS[name]
+    try:
+        entry = importlib.import_module(module).main
+    except (ImportError, AttributeError) as exc:
+        return _error(f"`wf {name}` is not available: could not load {module} ({exc}).")
+    return entry(list(args))
+
+
+def _repair_binaries(home: Path | None) -> bool:
+    """Let config fix a stale claude/codex path before the check below; True when it changed something."""
+    from workforce.team import config as team_config
+
+    repair = getattr(team_config, "repair_binaries", None)
+    if repair is None:
+        return False
+    try:
+        notes = repair(home)
+    except Exception as exc:
+        print(f"! could not check the claude/codex paths in team.toml ({exc}).", file=sys.stderr)
+        return False
+    for note in notes or []:
+        print(note, file=sys.stderr)
+    return bool(notes)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     home: Path | None = None,
     environ: Mapping[str, str] | None = None,
     execvp: Callable[[str, list[str]], object] = os.execvp,
-    root: Path | None = None,
     stdout=None,
 ) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
@@ -141,6 +154,8 @@ def main(
         return cli.main(args)
 
     environ = os.environ if environ is None else environ
+    if args and args[0] in SUBCOMMANDS:
+        return subcommand_main(args[0], args[1:])
     if args and args[0] == "codex":
         return codex_main(args[1:], home=home, environ=environ, execvp=execvp)
     bad = api_key_vars(environ)
@@ -164,23 +179,21 @@ def main(
             "WorkForce uses the subscription only; unset it unless you mean it.",
             file=sys.stderr,
         )
+    if _repair_binaries(home):
+        try:
+            cfg = team_config.load(home)
+        except ConfigError as exc:
+            return _error(str(exc))
     claude = Path(cfg.claude).expanduser()
-    python = venv_python(root)
-    plugin = plugin_dir(root)
-    if not python.is_file():
-        return _error(
-            f"{python} is missing. The plugin's hooks and Codex server run from the agent-team virtualenv. "
-            "Create it with: uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -e '.[dev]'"
-        )
-    if not (plugin / ".claude-plugin" / "plugin.json").is_file() or not (plugin / TEAM_FILE).is_file():
-        return _error(f"the WorkForce plugin at {plugin} is incomplete (needs .claude-plugin/plugin.json and {TEAM_FILE}).")
     if not (claude.is_file() and os.access(claude, os.X_OK)):
         return _error(f"claude not found at {claude}. Set `claude = \"…\"` in ~/.workforce/team.toml.")
-
     try:
-        agents_gen.regenerate(plugin, cfg)
+        plugin = plugin_runtime.prepare(home, cfg)
+    except plugin_runtime.PluginMissing as exc:
+        return _error(str(exc))
     except OSError as exc:
-        print(f"! could not update the plugin's agent files from team.toml ({exc}); using the existing ones.", file=sys.stderr)
+        return _error(f"could not write the WorkForce plugin to {plugin_runtime.prepared_dir(home)} ({exc}).")
+    python = sys.executable
     team_text = (plugin / TEAM_FILE).read_text(encoding="utf-8")
     stream = stdout if stdout is not None else sys.stdout
     if banner_wanted(args, stream):

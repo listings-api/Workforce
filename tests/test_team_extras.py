@@ -19,7 +19,7 @@ from tests.test_team_launch import run as launch_run
 from tests.test_team_launch import setup as launch_setup  # noqa: F401  (fixture)
 from tests.test_team_mcp import FAKE, ROOT, env, finding, ollaya, verdict  # noqa: F401  (fixtures + helpers)
 from workforce.errors import ConfigError
-from workforce.team import agents_gen, approvals, config, hooks, launch, relay, usage_cache
+from workforce.team import agents_gen, approvals, config, hooks, launch, plugin_runtime, relay, usage_cache
 
 NOW = 1_800_000_000.0
 TRICKY = "why does `f(x)` return {y}?\n```python\ndef f(x):\n    return '{}'.format(x) % 5\n```\nünïcode 日本語 🚀\n  keep   spacing  \n"
@@ -422,15 +422,14 @@ def frontmatter_of(path: Path) -> dict:
 
 
 def test_wf_regenerates_agent_files_from_team_toml_at_launch(launch_setup):
-    root, home, _, calls = launch_setup
-    agents = root / "wf-plugin" / "agents"
+    _, home, _, calls = launch_setup
+    agents = home / ".workforce" / "plugin" / "agents"
     config.set_team_models("claude-opus-5-5[1m]", "max", "claude-haiku-4-5-20251001", "low", home)
     assert launch_run(launch_setup, []) == 0
     coder = frontmatter_of(agents / "fast-coder.md")
     assert (coder["model"], coder["effort"]) == ("claude-haiku-4-5-20251001", "low")
     assert not (agents / "reviewer.md").exists()  # the Claude review is run by the MCP server, with reviewer_model/effort
     assert len(calls) == 1
-    # a later change is picked up on the next launch, and an unchanged file is not rewritten
     mtime = (agents / "fast-coder.md").stat().st_mtime_ns
     launch_run(launch_setup, [])
     assert (agents / "fast-coder.md").stat().st_mtime_ns == mtime
@@ -440,29 +439,31 @@ def test_wf_regenerates_agent_files_from_team_toml_at_launch(launch_setup):
 
 
 def test_an_agent_file_of_an_earlier_version_is_removed_at_launch(launch_setup):
-    root, _, _, _ = launch_setup
-    stale = root / "wf-plugin" / "agents" / "reviewer.md"
+    _, home, _, _ = launch_setup
+    stale = home / ".workforce" / "plugin" / "agents" / "reviewer.md"
+    stale.parent.mkdir(parents=True)
     stale.write_text("---\nname: reviewer\n---\nold reviewer that recorded its own verdict\n")
     assert launch_run(launch_setup, []) == 0
     assert not stale.exists()
 
 
-def test_committed_agent_files_match_their_templates_with_the_defaults():
-    plugin = ROOT / "wf-plugin"
+def test_packaged_templates_render_with_the_defaults_and_no_placeholder_is_left():
+    plugin = plugin_runtime.source_dir()
     cfg = config.TeamConfig("c", "x", "m", "high", 50, 60)
-    for name, prefix in agents_gen.ROLES.items():
-        template = (plugin / "agent-templates" / f"{name}.md").read_text()
-        rendered = agents_gen.render(template, getattr(cfg, f"{prefix}_model"), getattr(cfg, f"{prefix}_effort"))
-        assert (plugin / "agents" / f"{name}.md").read_text() == rendered
-        assert "{{" not in rendered
+    files = agents_gen.rendered(plugin, cfg)
+    assert set(files) == {f"agents/{name}.md" for name in agents_gen.ROLES}
+    for name, text in files.items():
+        assert "{{" not in text
+        assert frontmatter_of_text(text)["model"] == config.DEFAULTS["fast_coder_model"]
 
 
-def test_missing_template_leaves_the_agent_file_alone(tmp_path):
-    plugin = tmp_path / "wf-plugin"
-    (plugin / "agents").mkdir(parents=True)
-    (plugin / "agents" / "fast-coder.md").write_text("keep me")
-    assert agents_gen.regenerate(plugin, config.TeamConfig("c", "x", "m", "high", 50, 60)) == []
-    assert (plugin / "agents" / "fast-coder.md").read_text() == "keep me"
+def test_a_missing_template_renders_no_agent_file(tmp_path):
+    assert agents_gen.rendered(tmp_path, config.TeamConfig("c", "x", "m", "high", 50, 60)) == {}
+
+
+def frontmatter_of_text(text: str) -> dict:
+    match = re.match(r"---\n(.*?)\n---\n", text, re.S)
+    return dict(line.split(": ", 1) for line in match.group(1).splitlines())
 
 
 # ------------------------------------------------------------------ wf codex
@@ -568,7 +569,7 @@ def test_settings_reports_laya_down_and_read_only_mode(env):
 
 
 def test_plugin_wires_the_new_commands_hook_timeout_and_verbatim_rule():
-    plugin = ROOT / "wf-plugin"
+    plugin = plugin_runtime.source_dir()
     hooks_json = json.loads((plugin / "hooks" / "hooks.json").read_text())["hooks"]
     assert hooks_json["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 600
     for command, tool in (("codex-mode", "codex_settings"), ("claude-model", "team_models"), ("wf-settings", "settings")):

@@ -8,6 +8,7 @@ import tempfile
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Mapping
 
 from workforce.config import EFFORTS
 from workforce.errors import ConfigError
@@ -136,12 +137,35 @@ def _from_table(table: dict, path: Path) -> TeamConfig:
     return TeamConfig(**{key: values[key] for key in DEFAULTS})
 
 
-def load(home: Path | None = None) -> TeamConfig:
-    """Read `team.toml`, creating it with the defaults on first use; keys missing from the file take the defaults."""
+def _detected_defaults(home: Path | None, environ: Mapping[str, str] | None) -> dict:
+    """The defaults with `claude` / `codex` replaced by the CLIs found on this machine (kept when none is found).
+
+    An explicit `home` without an `environ` is a sandbox (tests, tooling): nothing is detected, so the file
+    it gets is reproducible whatever is installed on the machine.
+    """
+    values = dict(DEFAULTS)
+    if home is not None and environ is None:
+        return values
+    from workforce.team import detect
+
+    for name in ("claude", "codex"):
+        found = detect.find_cli(name, environ, home)
+        if found is not None:
+            values[name] = str(found)
+    return values
+
+
+def load(home: Path | None = None, environ: Mapping[str, str] | None = None) -> TeamConfig:
+    """Read `team.toml`, creating it on first use; keys missing from the file take the defaults.
+
+    The first run writes the `claude` / `codex` paths found on this machine (`detect.find_cli`) and falls back
+    to the fixed defaults for one that is not found.
+    """
     path = config_path(home)
     if not path.exists():
-        atomic_write(path, _render(DEFAULTS))
-        return TeamConfig(**DEFAULTS)
+        values = _detected_defaults(home, environ)
+        atomic_write(path, _render(values))
+        return TeamConfig(**values)
     try:
         table = tomllib.loads(path.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, OSError) as exc:
@@ -211,6 +235,46 @@ def set_team_models(
         if value is not None:
             updates[key] = check(value)
     return _set_many(updates, home)
+
+
+def _display_path(path: Path, home: Path | None) -> str:
+    base = Path(home) if home is not None else Path.home()
+    try:
+        return "~/" + str(path.relative_to(base))
+    except ValueError:
+        return str(path)
+
+
+def repair_binaries(home: Path | None = None, environ: Mapping[str, str] | None = None) -> list[str]:
+    """Repoint a configured `claude` / `codex` that is missing or not executable at the CLI detection finds.
+
+    Only that key is rewritten in `team.toml`; a working path is never touched, and nothing changes when no
+    replacement is found. Returns one note per repaired key. Without a `team.toml` there is nothing to repair.
+    """
+    from workforce.team import detect
+
+    path = config_path(home)
+    try:
+        table = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+    notes: list[str] = []
+    text = path.read_text(encoding="utf-8")
+    for name in ("claude", "codex"):
+        configured = table.get(name, DEFAULTS[name])
+        if not isinstance(configured, str) or not configured.strip():
+            continue
+        current = Path(configured).expanduser()
+        if current.is_file() and os.access(current, os.X_OK):
+            continue
+        found = detect.find_cli(name, environ, home)
+        if found is None:
+            continue
+        text = _set_key(text, name, str(found))
+        notes.append(f"{name} not found at {configured}; using {found} (saved in {_display_path(path, home)})")
+    if notes:
+        atomic_write(path, text)
+    return notes
 
 
 def as_dict(cfg: TeamConfig) -> dict:

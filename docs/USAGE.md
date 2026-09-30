@@ -17,9 +17,9 @@ wf --resume                 # or -c, --model, ... : every claude option works as
 
 `wf` prints a small blue WF banner, then starts your real interactive `claude` with three things added:
 
-- **The `workforce` plugin** (`wf-plugin/` in the agent-team folder, loaded with `--plugin-dir`): a Codex tool server, the `fast-coder` sub-agent, eleven slash commands and two hooks.
+- **The `workforce` plugin** (shipped inside the package as `workforce/team/plugin/`; `wf` builds a runnable copy in `~/.workforce/plugin/` on every start and loads it with `--plugin-dir`): a Codex tool server, the `fast-coder` sub-agent, eleven slash commands and two hooks.
 - **A status line**: `WF │ Claude 5h 23% · wk 44% │ Codex wk 3% │ codex gpt-6-sol·high`. Yellow from 50%, red from 60%. `?` means Claude Code did not report that number; `~` after a Codex number means the last reading is more than 2 minutes old (a background refresh is on its way).
-- **Team rules** appended to Claude's system prompt (`wf-plugin/TEAM.md`).
+- **Team rules** appended to Claude's system prompt (`TEAM.md` in the plugin).
 
 Everything else is Claude Code as you know it: the same input box, permissions, `/model`, shift+tab, sub-agents and git. Claude Code's own header can't be changed, so the WF banner sits above it. `wf` uses your Claude Team login. If `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `OPENAI_API_KEY` is set, it refuses to start (exit 3).
 
@@ -62,7 +62,7 @@ The `.workforce/` folder is added to the repo's local `.git/info/exclude`, so th
 ### Codex mode, sub-agent models and `/wf-settings`
 
 - **`/codex-mode write`** lets `codex_ask` and the `@codex` line run Codex with `-s workspace-write` in your project, so it can edit files when you ask it to. `codex_plan` and `codex_review` stay read-only. The commit gate is unchanged: both reviews of the final files are still required, and an edit voids them. Saved as `codex_mode` in `~/.workforce/team.toml`.
-- **`/claude-model` and `/claude-effort`** save `reviewer_model`, `reviewer_effort`, `fast_coder_model`, `fast_coder_effort`. The reviewer settings are read by the server on each `claude_review`. A plugin agent file has a fixed `model:`, so `wf` rewrites `wf-plugin/agents/fast-coder.md` from `wf-plugin/agent-templates/` each time it starts (and removes the old `reviewer.md`). Edit the template, not the generated file. Efforts: `low medium high xhigh max`.
+- **`/claude-model` and `/claude-effort`** save `reviewer_model`, `reviewer_effort`, `fast_coder_model`, `fast_coder_effort`. The reviewer settings are read by the server on each `claude_review`. A plugin agent file has a fixed `model:`, so `wf` writes `agents/fast-coder.md` in `~/.workforce/plugin/` from the packaged template each time it starts. Efforts: `low medium high xhigh max`.
 - **`/wf-settings`** calls the `settings` tool and prints its text as is.
 
 ### Usage alert and stop
@@ -78,7 +78,7 @@ The status line saves Claude's 5-hour and weekly percentages to `~/.workforce/us
 | `~/.workforce/team.log` | One JSON line per Codex tool call and per hook or status-line error. |
 | `<repo>/.git/wf-approvals.json` | The review verdicts by tree hash (in the git common dir, so worktrees share it; never committed). |
 
-The plugin's hooks and Codex server run with `agent-team/.venv/bin/python`, so keep the `agent-team` folder and its `.venv` where they are. `wf` checks that path and says so if it is missing. `wf --help` and `wf --version` are Claude's.
+The plugin's hooks and Codex server run with the same Python as `wf` itself, wherever it was installed. `wf doctor` checks the whole setup. `wf --help` and `wf --version` are Claude's.
 
 ## Commands
 

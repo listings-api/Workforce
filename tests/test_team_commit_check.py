@@ -1,10 +1,11 @@
 """Commit gate fixes: a command may not change files before it commits, approvals are bound to the reviewed base,
-and inside `wf` a git pre-commit check compares the exact committed tree with the approvals before the user's own hooks run.
+and inside `wf` a git pre-commit check compares the exact committed tree with the approvals after the user's own hook ran.
 """
 
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -164,7 +165,7 @@ def wf_git(git_repo, home, tmp_path):
     (own / "pre-commit").write_text(f"#!/bin/sh\necho ran >> {log}\n")
     (own / "pre-commit").chmod(0o755)
     git(git_repo, "config", "core.hooksPath", str(own))
-    folder = githook.install(ROOT / ".venv" / "bin" / "python", home)
+    folder = githook.install(sys.executable, home)
     env = {**os.environ, "HOME": str(home), "PYTHONPATH": str(ROOT), **githook.session_env(os.environ, folder)}
     env.pop("WF_HOME", None)
     return git_repo, env, log
@@ -190,7 +191,52 @@ def test_the_commit_time_check_catches_what_the_command_check_never_saw(wf_git, 
     done = shell(repo, "printf 'unreviewed\\n' > README.md && git add -A && git commit -qm sneaky", env)
     assert done.returncode != 0 and "WorkForce blocked this commit" in done.stderr
     assert git(repo, "log", "--oneline").count("\n") == 0
-    assert not log.exists()
+    assert log.read_text().strip() == "ran"
+
+
+def set_pre_commit(repo, body):
+    own = Path(git(repo, "config", "core.hooksPath"))
+    (own / "pre-commit").write_text(f"#!/bin/sh\n{body}\n")
+    (own / "pre-commit").chmod(0o755)
+
+
+def test_a_repo_hook_that_rewrites_and_stages_files_cannot_slip_unreviewed_content_past_the_check(wf_git, home):
+    repo, env, log = wf_git
+    set_pre_commit(repo, "echo formatted-by-hook > README.md\ngit add README.md\necho ran >> " + str(log))
+    (repo / "README.md").write_text("reviewed\n")
+    approve(repo, "claude", "codex")
+    head = git(repo, "rev-parse", "HEAD")
+    done = shell(repo, "git add -A && git commit -qm formatted", env)
+    assert done.returncode != 0 and "WorkForce blocked this commit" in done.stderr
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert log.read_text().strip() == "ran"
+
+
+def test_a_failing_repo_hook_aborts_the_commit_with_its_status_and_output(wf_git, home):
+    repo, env, _ = wf_git
+    set_pre_commit(repo, "echo lint-failed-loudly >&2\nexit 3")
+    (repo / "README.md").write_text("reviewed\n")
+    approve(repo, "claude", "codex")
+    head = git(repo, "rev-parse", "HEAD")
+    done = shell(repo, "git add -A && git commit -qm x", env)
+    assert done.returncode == 1 and "lint-failed-loudly" in done.stderr
+    assert "WorkForce blocked" not in done.stderr
+    assert git(repo, "rev-parse", "HEAD") == head
+    direct = subprocess.run(
+        [sys.executable, "-m", "workforce.team.githook", "pre-commit"], cwd=repo, env=env, capture_output=True, text=True
+    )
+    assert direct.returncode == 3 and "lint-failed-loudly" in direct.stderr
+
+
+def test_a_repo_hook_that_only_reads_lets_an_approved_commit_through(wf_git, home):
+    repo, env, log = wf_git
+    set_pre_commit(repo, "git diff --cached --name-only >> " + str(log))
+    (repo / "README.md").write_text("reviewed\n")
+    approve(repo, "claude", "codex")
+    done = shell(repo, "git add -A && git commit -qm ok", env)
+    assert done.returncode == 0, done.stderr
+    assert log.read_text().strip() == "README.md"
+    assert git(repo, "log", "-1", "--format=%s") == "ok"
 
 
 def test_the_commit_time_check_refuses_approvals_for_another_base(wf_git, home):

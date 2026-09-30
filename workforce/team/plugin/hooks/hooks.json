@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/../.venv/bin/python\" -m workforce.team.hooks pretooluse",
+            "command": "{{python_quoted}} -m workforce.team.hooks pretooluse",
             "timeout": 60
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/../.venv/bin/python\" -m workforce.team.hooks userpromptsubmit",
+            "command": "{{python_quoted}} -m workforce.team.hooks userpromptsubmit",
             "timeout": 600
           }
         ]

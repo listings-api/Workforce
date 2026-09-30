@@ -1,10 +1,14 @@
 [project]
 name = "workforce"
-version = "0.1.0"
+version = "0.2.0"
 description = "WorkForce Agent: a Claude + Codex agent team CLI"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = ["prompt_toolkit>=3.0", "rich>=13", "httpx>=0.27"]
+
+[project.urls]
+Repository = "https://github.com/listings-api/Workforce"
+Issues = "https://github.com/listings-api/Workforce/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -21,8 +25,16 @@ build-backend = "setuptools.build_meta"
 include = ["workforce*"]
 
 [tool.setuptools.package-data]
-workforce = ["prompts/*.md"]
+workforce = [
+  "prompts/*.md",
+  "team/plugin/.claude-plugin/*.json",
+  "team/plugin/.mcp.json",
+  "team/plugin/*.md",
+  "team/plugin/agent-templates/*.md",
+  "team/plugin/commands/*.md",
+  "team/plugin/hooks/*.json",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["real_pytest_probe: uses the real pytest-import probe in checks", "laya: needs a running Ollaya with a Laya model, set WF_LAYA_LIVE=1"]
+markers = ["real_pytest_probe: uses the real pytest-import probe in checks", "laya: needs a running Ollaya with a Laya model, set WF_LAYA_LIVE=1", "slow: builds and installs the package for real, set WF_SLOW=1"]
