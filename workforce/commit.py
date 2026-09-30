@@ -1,4 +1,4 @@
-"""The Claude commit step: one signed commit per task, verified against the approved tree."""
+"""The Claude commit step: one commit per task, verified against the approved tree."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from workforce.config import Role
 from workforce.errors import GitError
 from workforce.state import Task
 
-TOUCH_ID_MESSAGE = "👆 tap Touch ID to sign…"
+TOUCH_ID_MESSAGE = "👆 committing… (confirm if your git asks)"
 
 
 ACCEPTED_SIGNATURES = ("G", "U")

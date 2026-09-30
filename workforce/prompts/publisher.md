@@ -13,7 +13,7 @@ WorkForce built the work below on its own branch. Your job is to publish that br
 - Never force-push. Never delete a remote branch.
 - Never push, commit to, merge into or otherwise modify `{base_ref}`, `main`, `master` or any other base branch.
 - Do not create commits, amend, rebase, reset or edit files here. Publish the branch as it is. Follow your usual title and description conventions for the pull request.
-- Do not disable or bypass commit signing or any hook. If something needs a Touch ID tap, wait for it to finish.
+- Do not disable or bypass commit signing or any hook. If git asks for a confirmation, wait for it to finish.
 - If any step fails, do not work around it: report the error.
 
 ## User rules (always follow)

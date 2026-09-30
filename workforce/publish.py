@@ -196,7 +196,7 @@ def publish(
             if confirm is not None and not confirm(entry):
                 rows.append(PublishRow(entry["repo"], entry["branch"], entry["commits"], STATUS_SKIPPED))
                 continue
-            tell(f"publishing {entry['branch']} in {entry['repo']} (tap Touch ID if asked)…")
+            tell(f"publishing {entry['branch']} in {entry['repo']} (confirm if git asks)…")
             orch.events.emit("note", text=f"publishing {entry['branch']} in {entry['repo']}")
             row = publish_branch(orch, run_id, entry)
             rows.append(row)

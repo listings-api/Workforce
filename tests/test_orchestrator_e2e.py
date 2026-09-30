@@ -763,7 +763,7 @@ def test_agent_streams_go_to_step_logs_and_state_changes_emit_events(harness):
         ("T1", "committing"),
         ("T1", "merged"),
     ]
-    assert h.events("commit_waiting") and "Touch ID" in h.events("commit_waiting")[0]["message"]
+    assert h.events("commit_waiting") and "confirm if your git asks" in h.events("commit_waiting")[0]["message"]
 
 
 def test_invalid_plans_are_rejected():
@@ -788,7 +788,7 @@ def test_a_failed_commit_is_retried_once_then_asks_the_user(harness):
     task = run.task("T1")
     assert task.status == "blocked"
     question = run.questions[0]
-    assert "failed twice" in question.text and "Touch ID" in question.text
+    assert "failed twice" in question.text and "confirmation prompt" in question.text
     assert len(prompts_with(h.calls(), "claude", "# Role: committer")) == 2
     assert len(h.events("commit_waiting")) == 2
     assert git_ops.head_sha(h.repo) == task.base_sha

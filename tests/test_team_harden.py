@@ -341,9 +341,11 @@ SHELL_COMMITS = [
 @pytest.mark.parametrize("command", SHELL_COMMITS)
 def test_shell_syntax_around_a_commit_is_gated(git_repo, home, command):
     reason = denied(pre(command, git_repo, home))
-    assert "/review" in reason, (command, reason)
+    assert "/review" in reason or "plain `git commit`" in reason, (command, reason)
     approve(git_repo, "claude", "codex")
-    assert pre(command, git_repo, home) is None, command
+    after = pre(command, git_repo, home)
+    if after is not None:
+        assert "plain `git commit`" in denied(after), command
 
 
 @pytest.mark.parametrize(

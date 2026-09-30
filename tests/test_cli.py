@@ -321,7 +321,7 @@ def test_status_and_log_show_the_expected_lines(initialised):
     assert "[run]" in out and "started" in out
     assert "[plan]" in out and "plan.md: 2 tasks" in out
     assert "review  opus-5-5 → APPROVE" in out
-    assert "commit  👆 tap Touch ID to sign…" in out
+    assert "commit  👆 committing… (confirm if your git asks)" in out
 
     code, out = env.wf("log", "T2")
     assert code == 0
@@ -559,7 +559,7 @@ def test_the_event_formatter_covers_every_event_kind():
         "agent_event": {"phase": "start", "role": "coder", "task": "T3", "model": "claude-sonnet-5-5", "step": "code"},
         "check_result": {"task": "T1", "ok": False, "no_checks": False},
         "review": {"task": "T1", "model": "claude-opus-5-5", "verdict": "APPROVE", "sha": "3f9c2a1abcdef", "findings": 0},
-        "commit_waiting": {"task": "T1", "message": "👆 tap Touch ID to sign…"},
+        "commit_waiting": {"task": "T1", "message": "👆 committing… (confirm if your git asks)"},
         "committed": {"task": "T1", "sha": "abcdef123456"},
         "merged": {"task": "T1", "sha": "abcdef123456", "branch": "wf/r/T1"},
         "alert": {"message": "claude five_hour window at 51%"},

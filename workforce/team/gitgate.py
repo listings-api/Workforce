@@ -36,6 +36,12 @@ NOTES_READ = frozenset({"list", "show", "get-ref"})
 STASH_SAFE = frozenset({"list", "show", "pop", "apply", "drop", "clear", "branch", "store"})
 BENIGN_FLAGS = frozenset({"--abort", "--quit"})
 CLEAN_OK = frozenset({"merge", "cherry-pick", "revert"})
+TREE_SAFE_GIT = risk.READ_ONLY_GIT | frozenset({"add", "fetch", "remote", "config", "notes", "reflog", "worktree", "stash"})
+SHELL_BUILTINS = frozenset(
+    {"cd", "pushd", "popd", "export", "unset", "set", "exit", "return", "read", "sleep", "wait", ":", "[[", "local", "declare", "alias", "true", "false", "test", "["}
+)
+HARMLESS_TARGETS = frozenset({"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"})
+ENV_CLEARING = frozenset({"-i", "-", "--ignore-environment", "-u", "--unset"})
 BRANCH_NOT_MOVE = frozenset(
     {"-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy", "-l", "--list", "-u", "--set-upstream-to", "--unset-upstream", "--edit-description"}
 )
@@ -288,6 +294,62 @@ def parse_move(sub: str, args: Sequence[str]) -> tuple[str, str, bool] | None:
     return None
 
 
+def _short_flag(args: Sequence[str], flag: str, value_flags: str) -> bool:
+    """True when the short option `flag` appears in `args`, alone or in a cluster, before `--`."""
+    for token in args:
+        if token == "--":
+            return False
+        if token.startswith("-") and not token.startswith("--") and len(token) > 1:
+            for char in token[1:]:
+                if char == flag:
+                    return True
+                if char in value_flags:
+                    break
+    return False
+
+
+def _join_fds(tokens: Sequence[str]) -> list[str]:
+    """Rejoin a file-descriptor number with the redirection after it (`2`, `>` → `2>`), which tokenising splits apart."""
+    joined: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        following = tokens[index + 1] if index + 1 < len(tokens) else ""
+        if token.isdigit() and following[:1] in (">", "<") and _REDIRECT.match(following):
+            joined.append(token + following)
+            index += 2
+            continue
+        joined.append(token)
+        index += 1
+    return joined
+
+
+def _clears_env(tokens: Sequence[str]) -> bool:
+    """True when an `env` wrapper in `tokens` clears or unsets environment variables (`env -i`, `env -u NAME`, `env -`)."""
+    for index, token in enumerate(tokens):
+        if Path(token).name != "env":
+            continue
+        for option in tokens[index + 1:]:
+            if option in ENV_CLEARING or option.startswith("--unset=") or (option.startswith("-u") and len(option) > 2):
+                return True
+            if not option.startswith("-"):
+                break
+    return False
+
+
+def _written_file(tokens: Sequence[str]) -> str | None:
+    """The file an output redirection in `tokens` writes to, unless it is /dev/null, a terminal or a file descriptor."""
+    for index, token in enumerate(tokens):
+        match = _REDIRECT.match(token)
+        if not match or "<" in token[: len(token) - len(match.group(1))]:
+            continue
+        target = match.group(1) or (tokens[index + 1] if index + 1 < len(tokens) else "")
+        if not target or target.startswith("&") or target in HARMLESS_TARGETS or target.isdigit():
+            continue
+        return target
+    return None
+
+
 def _add_stage(args: Sequence[str]) -> str | None:
     """"all" for `git add -A/--all/.`, "dot" for `git add .` alone, "update" for `-u`; None for anything narrower."""
     flags = [a for a in args if a.startswith("-")]
@@ -327,6 +389,11 @@ class Analyzer:
         self.dynamic = False
         self.own_hits: set[str] = set()
         self.raw = ""
+        self.seq = 0
+        self.changes: list[tuple[int, str]] = []
+        self.commit_seqs: list[int] = []
+        self.env_cleared = False
+        self.hidden_commit = False
 
 
     def run(self, command: str) -> Analysis:
@@ -334,7 +401,31 @@ class Analyzer:
         self.feed(command, 0)
         if not self.analysis.deny:
             self._fallback()
+        if not self.analysis.deny and self.commit_seqs:
+            if self.hidden_commit:
+                self.analysis.deny = (
+                    "this command runs `git commit` in a form WorkForce cannot read (a variable, eval, a piped or generated "
+                    "script, or another program), so it cannot tell what the command changes first. Run a plain "
+                    "`git commit` command instead."
+                )
+            elif self.env_cleared:
+                self.analysis.deny = (
+                    "this command clears or unsets the environment for a git command (`env -i` / `env -u`); "
+                    "WorkForce's commit check lives in that environment, so commit without it."
+                )
+            else:
+                last = max(self.commit_seqs)
+                earlier = [text for seq, text in self.changes if seq < last]
+                if earlier:
+                    self.analysis.deny = (
+                        f"this command can change files before it commits (`{earlier[0]}`). The review gate checks the files "
+                        "before the command runs, so those changes would be committed unreviewed. Make the change first, "
+                        "run /review, then commit in a command of its own (`git add -A && git commit …` is fine)."
+                    )
         return self.analysis
+
+    def _change(self, text: str) -> None:
+        self.changes.append((self.seq, text))
 
     def feed(self, command: str, depth: int) -> None:
         for tokens in raw_segments(command):
@@ -343,6 +434,13 @@ class Analyzer:
             self.segment(tokens, depth)
 
     def segment(self, tokens: Sequence[str], depth: int, dynamic: bool = False) -> None:
+        self.seq += 1
+        tokens = _join_fds(tokens)
+        if _clears_env(tokens):
+            self.env_cleared = True
+        written = _written_file(tokens)
+        if written:
+            self._change(f"> {written}")
         assigns, rest = _split_prefix(tokens)
         words, fed = _strip_redirects(rest)
         if not words:
@@ -369,8 +467,10 @@ class Analyzer:
         args = words[1:]
         if "$" in head or "`" in head:
             self.dynamic = True
+            self._change(" ".join(words)[:60])
         elif name in ("eval", "source") or head == ".":
             self.dynamic = True
+            self._change(" ".join(words)[:60])
         elif name in ("cd", "pushd"):
             target = args[0] if args else str(self.home)
             self.where = risk._resolve(target, self.where, self.home) if self.where is not None else None
@@ -381,14 +481,20 @@ class Analyzer:
             if inner:
                 self.segment(inner, depth + 1, True)
         elif name == "find":
+            if any(a in risk.FIND_MUTATORS for a in args if a not in risk.FIND_EXEC):
+                self._change(" ".join(words)[:60])
             self._find(args, depth)
         elif name == "git" or name.startswith("git-"):
             self._git(words, dynamic)
         elif name == "gh":
             self._gh(words)
-        elif name in INERT:
+        elif name in SHELL_BUILTINS:
             return
+        elif name in INERT:
+            if not risk._segment_read_only(list(words)):
+                self._change(" ".join(words)[:60])
         else:
+            self._change(" ".join(words)[:60])
             self._own(words)
 
     def _shell(self, words: list[str], depth: int, fed: bool) -> None:
@@ -400,6 +506,7 @@ class Analyzer:
             self.where = saved_where
             return
         operands = [a for a in args if not a.startswith(("-", "+"))]
+        self._change(" ".join(words)[:60])
         if fed or not operands:
             self.dynamic = True
         else:
@@ -509,6 +616,10 @@ class Analyzer:
             if not parts:
                 return
             sub, args = parts[0], parts[1:] + args
+        if sub not in TREE_SAFE_GIT and sub != "commit":
+            self._change(" ".join(words)[:60])
+        elif sub == "stash" and not (args and args[0] in ("list", "show")):
+            self._change(" ".join(words)[:60])
         if sub == "add":
             mode = _add_stage(args)
             if mode and target is not None:
@@ -544,6 +655,10 @@ class Analyzer:
             self.analysis.deny = f"the repository this `git {sub}` runs in cannot be resolved (a variable or an unknown directory); use a literal path."
             return
         stage_a = False
+        if "--no-verify" in args or (sub == "commit" and _short_flag(args, "n", COMMIT_VALUE_SHORT)):
+            self.analysis.deny = f"`git {sub} --no-verify` skips WorkForce's commit-time review check. Commit without it."
+            return
+        self.commit_seqs.append(self.seq)
         if sub == "commit":
             stage_a, paths = parse_commit_args(args)
             if paths:
@@ -583,6 +698,8 @@ class Analyzer:
         base = self.where if self.where is not None else self.cwd
         env = {k: risk._resolve(v, base, self.home) or v for k, v in self.ambient.items()}
         op = Op("a git commit the gate could not parse", Target(env.get("GIT_WORK_TREE", base), env))
+        self.commit_seqs.append(self.seq + 1)
+        self.hidden_commit = True
         if _STAGE_ALL_TEXT.search(text):
             op.stage = "working"
         self.analysis.ops.append(op)

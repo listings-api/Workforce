@@ -2427,7 +2427,7 @@ class Orchestrator:
             return self._ask(
                 "commit_failed",
                 f"The commit for {task.id} failed twice ({outcome.error}). "
-                "Was the Touch ID prompt cancelled? Answer when you are ready to try again.",
+                "Was a confirmation prompt cancelled? Answer when you are ready to try again.",
                 {},
                 task_id=task.id,
                 resume_to="awaiting_commit",

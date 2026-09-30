@@ -5,7 +5,7 @@ decides which task steps run when, and owns the merge queues. One `parallel` poo
 Within a repo, commits, rebases and merges all happen while holding that repo's queue, so its integration
 branch moves one merge at a time; different repos never conflict, so their queues run side by side.
 Commits and committer rebases are serialised across ALL repos by one global lock, so the user never gets two
-Touch ID prompts at once.
+confirmation prompts at once.
 A task whose dependency lives in another repo starts only after that dependency is merged.
 """
 
@@ -360,7 +360,7 @@ class Scheduler:
         orch.emit(
             "note",
             task=task.id,
-            text=f"{main_branch} moved on; the committer is rebasing {task.branch} (tap Touch ID to sign…)",
+            text=f"{main_branch} moved on; the committer is rebasing {task.branch} (confirm if your git asks…)",
         )
         with self._commit_lock:
             if not self._may_continue():

@@ -46,7 +46,6 @@ WF │ Claude 5h 12% · wk 40% │ Codex wk 8% │ claude Opus 5.5·high │ cod
 
 ## 1. What you need
 
-- **macOS**. It's built and tested on Apple Silicon.
 - **Python 3.11** and **[uv](https://docs.astral.sh/uv/)**, to create the virtual environment: `brew install uv`.
 - **git**.
 - **A Claude subscription** that includes Claude Code (Pro, Max, Team or Enterprise).
@@ -159,7 +158,7 @@ Type a task as you would in Claude Code. Claude follows the team rules:
 2. **They settle disagreements.** If Claude disagrees with the plan, they debate for up to 2 rounds. If they still disagree, Claude asks you, showing both positions.
 3. **Claude writes the code.** Small mechanical parts go to a faster **fast coder** helper (Sonnet 5.5 by default).
 4. **Two reviews.** Before a commit, a fresh Claude **reviewer** and Codex each review the exact changes. Both must say APPROVE.
-5. **Claude commits** following your git instructions (branch, message, pull first, and so on). It never force-pushes and never turns off commit signing, and it only pushes when you ask.
+5. **Claude commits** following your git instructions (branch, message, pull first, and so on). It never force-pushes, and it only pushes when you ask.
 
 Codex's plans and reviews are shown to you **word for word**. Claude gives its own view separately, under a label.
 
@@ -206,13 +205,14 @@ The banner and the status line always show which Claude and Codex models are act
 A hook checks every `git` command Claude runs:
 
 - **`git commit` needs both approvals**, from the Claude reviewer and from Codex, for exactly the files being committed. Any edit after the reviews cancels them. Type `/review` to run both reviews and see whether a commit is allowed.
+- **Reviews must be against the current commit.** An approval records which commit the reviewers compared against, and only a review against the current HEAD can allow a commit. A review against an older commit, or one made before a `git pull`, has to be redone.
+- **Commit in a command of its own.** A command that changes files and then commits (`format && git commit`, `echo … > file && git commit`) is refused, because those changes would be unreviewed. Make the change, run `/review`, then commit. `git add -A && git commit …` is fine.
+- **Checked again at commit time.** Inside `wf`, git itself runs a WorkForce check just before each commit: the exact files being committed must match the approved ones. Your repository's own git hooks still run after it, as usual. Skipping it (`--no-verify`, `-c core.hooksPath=…`, clearing the environment) is refused.
 - **The reviews can't be faked.** WorkForce runs both reviewers itself and signs their verdicts. The Claude you chat with can't record or edit an approval.
 - **Both reviewers are read-only.** The Claude reviewer can only read files. Codex runs read-only, with its browser and computer-control add-ons switched off.
 - **Always allowed:** `git pull`, and `git merge origin/master` with nothing staged. They only bring in existing commits. If a merge stops on conflicts, the commit that resolves them needs both reviews.
 - **Needs both reviews:** pointing a branch at a commit that isn't already on it or on a remote branch (`git reset <commit>`, `git branch -f`, `git checkout -B`).
-- **Always refused:** force-push, turning off commit signing, `rebase`, `git stash`, `commit-tree`, `update-ref`, and `git reset --hard` on `main`/`master`.
-
-If your git signs commits (for example with Touch ID), you confirm each commit as usual.
+- **Always refused:** force-push, `rebase`, `git stash`, `commit-tree`, `update-ref`, and `git reset --hard` on `main`/`master`.
 
 ## 10. Big tasks: `/plan-loop`
 
@@ -269,6 +269,7 @@ The plugin commands also work with a prefix, for example `/workforce:codex-model
 | `~/.workforce/team.key` | The key that signs review approvals. Created automatically; keep it private. |
 | `~/.workforce/team.log` | A log of tool calls, with secrets redacted |
 | `~/.workforce/*.json` | Usage and model-list caches |
+| `~/.workforce/git-hooks/` | The commit-time check `wf` points git at inside its sessions. It hands every hook on to your repository's own hooks. |
 | `<project>/.workforce/team/` | Codex's plans, reviews and replies, word for word; the `@codex` thread; `/plan-loop` plans. It's excluded from git automatically, so it never shows up in `git status`. |
 | `<repo's .git>/wf-approvals.json` | The signed review approvals, per repo. Never committed. |
 
@@ -281,7 +282,7 @@ The plugin commands also work with a prefix, for example `/workforce:codex-model
 | `claude not found at …` or `codex not found at …` | Put the right path in `~/.workforce/team.toml` (`which claude`, `which codex`). |
 | Codex tools fail with a login error | Run `codex login` again, then `codex login status`. |
 | `/codex-model` shows only the current model | Codex's model list couldn't be read (it prints why). Check `codex login status`; you can still type a model directly. |
-| A commit is blocked | Read the reason. Usually you need `/review`, or files changed after the review. Run `/review` again, then commit. |
+| A commit is blocked | Read the reason. Usually you need `/review`, files changed after the review, or the review was against an older commit. Run `/review` again, then commit in a command of its own. |
 | Everything is paused | A usage window reached 60%. Wait for the reset time shown, or type `/wf-continue`. |
 | `.venv/bin/python is missing` | Redo the two `uv` lines from step 4 inside `~/agent-team`. |
 

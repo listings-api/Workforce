@@ -29,7 +29,8 @@ Everything else is Claude Code as you know it: the same input box, permissions, 
 2. Claude writes the code. Small mechanical sub-tasks go to the `fast-coder` sub-agent (Sonnet 5.5).
 3. Before a commit, two reviews of the exact changes, both started by the tool server: `claude_review` runs a fresh headless Claude (`reviewer_model`, default Opus 5.5) in safe mode with only Read, Glob and Grep, no MCP servers and no WorkForce plugin, and `codex_review` runs Codex read-only. Every read-only Codex run (plans, reviews, asks, `@codex`) also switches off Codex plugins and each MCP server in `~/.codex/config.toml`, because the read-only sandbox does not stop an MCP tool such as browser or computer control from acting. The server records each verdict (APPROVE, REQUEST_CHANGES or BLOCKED) for the tree hash, signed with a key in `~/.workforce/team.key`. No tool takes a verdict, an unsigned or altered entry is ignored, and a hook denies edits to the approvals file and the key. Any edit voids both approvals.
    **The commit hook** blocks `git commit`, `merge --continue`, `am` and staged merges/cherry-picks/reverts in any form (`git -C x commit`, `a && git commit`, `env … git commit`, `bash -c '…'`, aliases, `GIT_DIR=…`) until both approve the tree that would be committed. That is the staged tree for a plain `git commit`, and the whole working state for `git add -A && git commit …` or `git commit -a`. `git commit <paths>` is denied: stage, then commit. A merge, cherry-pick or revert of existing commits with nothing staged (`git merge origin/master`, `git pull`) needs no review; if it stops on conflicts, the resolution commit is gated. `git reset <commit>`, `git branch -f`, `git checkout -B` and `git switch -C` may point a branch at a commit that is already on the current branch or on a remote branch; any other commit needs both approvals of its files first (review it with `git checkout --detach <sha>` and /review). `git reset --hard` on or to `main`/`master` stays blocked. Commands it can't parse are denied. `rebase`, `commit-tree`, `update-ref`, `filter-branch`, `replace`, creating a `git stash`, and `gh api` writes to refs or commits are refused. In a folder of several repos, pass `repo` to the review tools; approvals are per repo.
-4. Force-push, `--no-gpg-sign` and `commit.gpgsign=false` are always denied. Claude follows your git instructions; it does not push unless you ask.
+4. Force-push is always denied. Claude follows your git instructions; it does not push unless you ask.
+5. Approvals record the commit the reviewers compared against; only a review against the current HEAD allows a commit. A command that changes files and then commits in one go is refused, and inside `wf` git runs a WorkForce pre-commit check that compares the exact committed files with the approvals before handing over to your repository's own hooks.
 5. Laya gives yes/no hints only. You pick the models.
 
 ### Slash commands
@@ -186,7 +187,7 @@ wf publish --repo app
 wf publish --yes
 ```
 
-For each repo whose integration branch has commits, it asks `Push wf/reviews-webhook-0929 (3 commits) in app and open a PR? [y/N]` (`--yes` skips the question). On yes it makes a temporary worktree of that branch and runs the Claude committer there, with your normal setup and rules, telling it to push the branch and open a PR the way you usually do (`gh` if your rules use it). It never force-pushes and never pushes or changes a base branch. It reports back whether the push worked and the PR url. You will see `👆 tap Touch ID` if your setup needs it. The temporary worktree is removed afterwards, and WorkForce checks that the branch tip and the base branch did not move.
+For each repo whose integration branch has commits, it asks `Push wf/reviews-webhook-0929 (3 commits) in app and open a PR? [y/N]` (`--yes` skips the question). On yes it makes a temporary worktree of that branch and runs the Claude committer there, with your normal setup and rules, telling it to push the branch and open a PR the way you usually do (`gh` if your rules use it). It never force-pushes and never pushes or changes a base branch. It reports back whether the push worked and the PR url. The temporary worktree is removed afterwards, and WorkForce checks that the branch tip and the base branch did not move.
 
 It prints a table: repo, branch, pushed, and the PR url or the error. Exit code 1 if any branch failed.
 
@@ -398,7 +399,7 @@ agent = "codex"
 model = "gpt-6-sol"
 effort = "high"
 
-[roles.committer]        # makes the signed commit; runs with YOUR global Claude and git setup
+[roles.committer]        # makes the commit; runs with YOUR global Claude and git setup
 agent = "claude"
 model = "claude-sonnet-5-5"
 effort = "high"
@@ -658,9 +659,9 @@ wf resume
 
 The run is already paused at that point, so this is allowed. WorkForce never swaps a model in by itself. You can also avoid the problem by running `wf init --check-models` first.
 
-### Touch ID cancelled or the commit failed
+### The commit failed
 
-The team shows `👆 tap Touch ID to sign…` and waits. If you cancel, or signing fails, the commit step fails and is retried once. If it fails a second time it becomes a question: `The commit for T2 failed twice … Was the Touch ID prompt cancelled?`. Answer it when you are ready (`wf answer Q4 "ready, try again"`), then `wf run --resume`, and tap when the prompt appears. Nothing is lost: the finished work sits in the task's working copy under `~/.workforce/worktrees/`, and the reviews are kept.
+The team shows `👆 committing… (confirm if your git asks)` and waits. If the commit fails, the step is retried once. If it fails a second time it becomes a question: `The commit for T2 failed twice … Was a confirmation prompt cancelled?`. Answer it when you are ready (`wf answer Q4 "ready, try again"`), then `wf run --resume`. Nothing is lost: the finished work sits in the task's working copy under `~/.workforce/worktrees/`, and the reviews are kept.
 
 If the commit fails for another reason, read the error in `wf log <task>`. A commit hook in your global setup may be rejecting it.
 

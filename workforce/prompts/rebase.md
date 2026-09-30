@@ -6,7 +6,7 @@ The branch `{branch}` for task {task_id} (repo `{repo_name}`) could not be fast-
 - Rebase the current branch (`{branch}`) onto `{main_branch}` (currently at `{main_sha}`). Do not switch branches.
 - If the rebase stops on a conflict, resolve it so that both sides keep their intent: what `{main_branch}` gained since the branch started must stay, and what this task added must stay. Make no other edits.
 - Do not change code that did not conflict, do not add new files, and do not squash, reorder or drop commits.
-- Do not disable or bypass commit signing. The rebase rewrites commits, so if signing needs a Touch ID tap, wait for it to finish.
+- Do not disable or bypass commit signing. The rebase rewrites commits, so if git asks for a confirmation, wait for it to finish.
 - Do not push, do not stash, do not reset, and do not touch `{main_branch}` itself. Do not write outside this worktree.
 - If you cannot finish the rebase, run `git rebase --abort` so the worktree is back as it was, and report why.
 

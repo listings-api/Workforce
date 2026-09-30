@@ -84,12 +84,12 @@ TOOLS: list[dict] = [
     {
         "name": "codex_review",
         "description": "Codex independently reviews the current changes (working state versus base, including untracked files) and returns a verdict JSON. The server records the verdict itself for the current tree hash.",
-        "inputSchema": _obj({"focus": _STR, "base": {"type": "string", "description": "Git ref to compare against; default HEAD"}, "repo": _REPO}),
+        "inputSchema": _obj({"focus": _STR, "base": {"type": "string", "description": "Git ref to compare against; default HEAD. Only a review against HEAD can allow a commit"}, "repo": _REPO}),
     },
     {
         "name": "claude_review",
         "description": "A fresh, read-only Claude reviewer (its own headless session, the configured reviewer model) independently reviews the current changes (working state versus base, including untracked files) and returns a verdict JSON. The server runs the reviewer and records the verdict itself for the current tree hash; nobody can record a verdict by hand.",
-        "inputSchema": _obj({"focus": _STR, "base": {"type": "string", "description": "Git ref to compare against; default HEAD"}, "repo": _REPO}),
+        "inputSchema": _obj({"focus": _STR, "base": {"type": "string", "description": "Git ref to compare against; default HEAD. Only a review against HEAD can allow a commit"}, "repo": _REPO}),
     },
     {
         "name": "codex_plan_review",
@@ -378,8 +378,8 @@ class Server:
         saved, note = self._save("ask", {"message": message, "session_id": session_id}, prompt, result, cfg, model, effort)
         return _text(f"{relay.truncate_reply(result.text, saved)}\n\n[codex session_id: {result.session_id}]\n{note}")
 
-    def _review_material(self, cwd: Path, args: dict) -> tuple[str, dict[str, str], str, bool]:
-        """(tree, prompt fields, base, diff truncated) for the changes in `cwd`; raises `ToolError` when there is nothing to review."""
+    def _review_material(self, cwd: Path, args: dict) -> tuple[str, dict[str, str], str, bool, str]:
+        """(tree, prompt fields, base, diff truncated, base commit) for the changes in `cwd`; raises `ToolError` when there is nothing to review."""
         base = _string_arg(args, "base") or "HEAD"
         base_sha = git_ops.resolve_ref(cwd, base)
         tree = approvals.current_tree(cwd)
@@ -394,14 +394,15 @@ class Server:
             "stat": git_ops.diff_stat(cwd, base_sha).strip(),
             "diff": _trim(diff, DIFF_LIMIT),
         }
-        return tree, fields, base, len(diff) > DIFF_LIMIT
+        return tree, fields, base, len(diff) > DIFF_LIMIT, base_sha
 
-    def _finish_review(self, cwd: Path, reviewer: str, verdict: dict, tree: str, truncated: bool, note: str) -> dict:
-        """Record the server-run reviewer's verdict for `tree` and report it with the resulting commit status."""
+    def _finish_review(self, cwd: Path, reviewer: str, verdict: dict, tree: str, truncated: bool, note: str, base_sha: str) -> dict:
+        """Record the server-run reviewer's verdict for `tree` against `base_sha` and report it with the resulting commit status."""
         recorded_verdict, summary = _consistent(verdict["verdict"], verdict["summary"], verdict["findings"])
-        approvals.record(cwd, reviewer, recorded_verdict, summary, verdict["findings"], tree=tree, home=self.home)
+        approvals.record(cwd, reviewer, recorded_verdict, summary, verdict["findings"], tree=tree, home=self.home, base=base_sha)
         status = approvals.status(cwd, self.home)
         stale = status["tree"] != tree
+        off_head = status.get("base") != base_sha
         return _json_text(
             {
                 **verdict,
@@ -412,7 +413,13 @@ class Server:
                 "missing": status["missing"],
                 "raw_output": note,
                 **({"diff_truncated": "the diff in the prompt was cut; the reviewer was told to read the files directly"} if truncated else {}),
+                "base": base_sha,
                 **({"note": "the working tree changed during the review; this verdict no longer applies to it"} if stale else {}),
+                **(
+                    {"base_note": "this review compared against a commit other than HEAD, so it cannot allow a commit on HEAD; review again without `base`"}
+                    if off_head
+                    else {}
+                ),
             }
         )
 
@@ -420,18 +427,18 @@ class Server:
         cwd = self._repo(args)
         cfg = self._cfg()
         model, effort = _codex_settings(cfg, args)
-        tree, fields, base, truncated = self._review_material(cwd, args)
+        tree, fields, base, truncated, base_sha = self._review_material(cwd, args)
         prompt = prompts.render("team_codex_review", **fields)
         result = self._run_codex(cfg, "team_review", prompt, model, effort, cwd=cwd, timeout_s=REVIEW_TIMEOUT_S, schema=schemas.VERDICT)
         _, note = self._save(
             "review", {"focus": _string_arg(args, "focus"), "base": base}, prompt, result, cfg, model, effort
         )
-        return self._finish_review(cwd, "codex", result.structured, tree, truncated, note)
+        return self._finish_review(cwd, "codex", result.structured, tree, truncated, note, base_sha)
 
     def tool_claude_review(self, args: dict) -> dict:
         cwd = self._repo(args)
         cfg = self._cfg()
-        tree, fields, base, truncated = self._review_material(cwd, args)
+        tree, fields, base, truncated, base_sha = self._review_material(cwd, args)
         prompt = claude_review.build_prompt(**fields)
         try:
             result = claude_review.run(cfg, cwd, prompt, REVIEW_TIMEOUT_S)
@@ -447,7 +454,7 @@ class Server:
             note = f"[raw reviewer output and the exact prompt saved: {path}]"
         except OSError as exc:
             note = f"[could not save the raw reviewer output: {exc}]"
-        return self._finish_review(cwd, "claude", result.structured, tree, truncated, note)
+        return self._finish_review(cwd, "claude", result.structured, tree, truncated, note, base_sha)
 
     def _plan_file(self, args: dict) -> tuple[Path, str, str]:
         """(absolute plan path, path relative to the project, sha256) of the `plan` argument; raises `ToolError` when unusable."""

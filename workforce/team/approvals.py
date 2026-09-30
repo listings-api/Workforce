@@ -23,7 +23,7 @@ import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 from workforce import git_ops
 from workforce.errors import GitError
@@ -124,9 +124,21 @@ def load_key(home: Path | None = None, create: bool = True) -> bytes | None:
     return bytes.fromhex(fresh)
 
 
+CURRENT_HEAD = object()
+
+
+def head_commit(cwd: Path | str, git_env: Mapping[str, str] | None = None) -> str | None:
+    """The commit HEAD points at, or None on a branch with no commits yet."""
+    try:
+        return _git(cwd, "rev-parse", "--verify", "--quiet", "HEAD^{commit}", env=git_env) or None
+    except GitError:
+        return None
+
+
 def _canonical(tree: str, reviewer: str, entry: Mapping) -> bytes:
     body = {
         "tree": tree,
+        "base": entry.get("base"),
         "reviewer": reviewer,
         "verdict": entry.get("verdict"),
         "summary": entry.get("summary"),
@@ -176,10 +188,12 @@ def record(
     tree: str | None = None,
     home: Path | None = None,
     git_env: Mapping[str, str] | None = None,
+    base: Any = CURRENT_HEAD,
 ) -> dict:
-    """Store `reviewer`'s signed verdict for `tree` (default: the current tree); returns the stored entry plus tree and reviewer.
+    """Store `reviewer`'s signed verdict for `tree` reviewed against `base` (default: the current HEAD commit).
 
-    Only the MCP server calls this, after it ran the reviewer itself.
+    The signature covers the base, so an approval only counts for a commit made on top of the commit that was reviewed
+    against. Only the MCP server calls this, after it ran the reviewer itself. Returns the stored entry plus tree and reviewer.
     """
     if reviewer not in REVIEWERS:
         raise ValueError(f"reviewer must be one of {list(REVIEWERS)}, got {reviewer!r}")
@@ -189,6 +203,7 @@ def record(
         raise ValueError("findings must be a list")
     tree = tree or current_tree(cwd, git_env)
     entry = {
+        "base": head_commit(cwd, git_env) if base is CURRENT_HEAD else base,
         "verdict": verdict,
         "summary": summary,
         "findings": list(findings or []),
@@ -212,12 +227,15 @@ def status(
     home: Path | None = None,
     tree: str | None = None,
     git_env: Mapping[str, str] | None = None,
+    base: Any = CURRENT_HEAD,
 ) -> dict:
-    """Both verdicts for `tree` (default: the current working-state tree), whether a commit is allowed, and what is missing.
+    """Both verdicts for `tree` (default: the current working-state tree), whether a commit on `base` is allowed, and what is missing.
 
-    An entry whose signature does not verify is ignored and reported in `missing`.
+    `base` is the commit the new commit goes on top of (default: the current HEAD). An approval counts only when it was
+    reviewed against exactly that commit. An entry whose signature does not verify is ignored and reported in `missing`.
     """
     tree = tree or current_tree(cwd, git_env)
+    expected = head_commit(cwd, git_env) if base is CURRENT_HEAD else base
     per_tree = _read(approvals_path(cwd, git_env)).get(tree, {})
     key = load_key(home, create=False)
     result: dict = {"tree": tree}
@@ -230,10 +248,18 @@ def status(
         elif entry is None:
             result[reviewer] = None
             missing.append(f"{reviewer}: no review of the current changes")
+        elif entry.get("base") != expected:
+            result[reviewer] = None
+            reviewed = (entry.get("base") or "no commit")[:12]
+            missing.append(
+                f"{reviewer}: reviewed against {reviewed}, but this commit goes on top of {(expected or 'no commit')[:12]}; "
+                "review again against HEAD (no custom base)"
+            )
         else:
             result[reviewer] = entry
             if entry.get("verdict") != "APPROVE":
                 missing.append(f"{reviewer}: {entry.get('verdict')} (needs APPROVE)")
+    result["base"] = expected
     result["commit_allowed"] = not missing
     result["missing"] = missing
     return result

@@ -191,6 +191,14 @@ def main(
         except Exception:
             claude_label = None
         banner.print_banner(cfg.codex_model, cfg.codex_effort, dict(environ), stream, claude=claude_label)
+    try:
+        from workforce.team import githook
+
+        extra = githook.session_env(environ, githook.install(python, home))
+    except OSError as exc:
+        return _error(f"could not set up WorkForce's commit check in {githook.hooks_dir(home)} ({exc}).")
+    if isinstance(environ, dict) or environ is os.environ:
+        environ.update(extra)
     command = build_argv(claude, plugin, python, team_text, args)
     execvp(command[0], command)
     return EXIT_OK

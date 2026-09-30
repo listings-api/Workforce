@@ -80,7 +80,7 @@ def _cwd(payload: Mapping[str, Any], env: Mapping[str, str]) -> str:
 
 def _missing(status: Mapping[str, Any]) -> list[str]:
     listed = [str(item) for item in status.get("missing") or []]
-    if any("bad signature" in item for item in listed):
+    if any("bad signature" in item or "reviewed against" in item for item in listed):
         return listed
     missing = []
     for key, label in REVIEWERS:
@@ -179,9 +179,11 @@ def move_reason(op: gitgate.Op, home: Path | None) -> str | None:
     reason = commit_reason(approvals.status(cwd, home, tree=tree, git_env=env))
     if reason is None:
         return None
+    here = approvals.head_commit(cwd, env)
     return (
         f"`{op.label}` would point a branch at {commit[:12]}, which is not on this branch or any remote branch. {reason} "
-        f"To review that commit: `git checkout --detach {commit[:12]}`, run /review, then run the command again."
+        f"To review that commit: `git checkout --detach {commit[:12]}`, run claude_review and codex_review with "
+        f"base = {(here or 'HEAD')[:12]} (the commit you are on now), switch back, then run the command again."
     )
 
 

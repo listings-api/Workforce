@@ -112,7 +112,6 @@ def make_repo(base: Path) -> Path:
     repo = base / "repo"
     repo.mkdir(parents=True)
     git(repo, "init", "-q", "-b", "main")
-    # test-only, local to this throwaway repo: no signing prompt (Touch ID) for the commits the checks make
     git(repo, "config", "commit.gpgsign", "false")
     git(repo, "config", "user.name", "wf-livetest")
     git(repo, "config", "user.email", "wf-livetest@example.invalid")

@@ -103,8 +103,8 @@ def test_successful_commit_is_verified_against_the_approved_tree(scene):
     for needle in ("RULE-BETA", "T1", "Add feature", scene.approved_tree, "`main`"):
         assert needle in request.prompt
     kinds = [kind for kind, _ in scene.emitted]
-    assert kinds[0] == "commit_waiting" and "Touch ID" in scene.emitted[0][1]["message"]
-    assert scene.emitted[0][1]["message"] == "👆 tap Touch ID to sign…"
+    assert kinds[0] == "commit_waiting" and "committing" in scene.emitted[0][1]["message"]
+    assert scene.emitted[0][1]["message"] == "👆 committing… (confirm if your git asks)"
     assert "committed" in kinds
 
 

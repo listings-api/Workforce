@@ -87,7 +87,7 @@ def test_reviewer_prompts_are_independent_read_only_and_judge_acceptance():
 
 def test_committer_prompt_covers_signing_history_and_pushing():
     text = render_all("committer")
-    assert "Touch ID" in text
+    assert "confirmation" in text
     assert "Do not amend" in text
     assert "Do not push" in text
     assert "--no-gpg-sign" not in text and "commit.gpgsign" not in text

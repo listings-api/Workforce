@@ -116,7 +116,7 @@ _SECRET_PATTERNS = (
 )
 _NO_GPG = re.compile(r"--no-gpg-sign|commit\.gpgsign\W{0,3}(?:false|0|no|off)\b", re.I)
 _GIT_ENV = re.compile(r"(?<![\w])GIT_CONFIG(?:_[A-Z0-9_]+)?(?![\w])")
-_GIT_CONFIG_DENY = re.compile(r"^(?:gpg\..*|(?:commit|tag)\.gpgsign|user\.signingkey|alias\..*)$")
+_GIT_CONFIG_DENY = re.compile(r"^(?:gpg\..*|(?:commit|tag)\.gpgsign|user\.signingkey|alias\..*|core\.hookspath)$")
 _GIT_CONFIG_READS = frozenset({"--get", "--get-all", "--get-regexp", "--list", "-l", "--show-origin", "--show-scope"})
 
 
@@ -680,11 +680,11 @@ def _check_git(segment: Sequence[str], where: str | None, home: Path, mode: str 
     for override in _git_config_overrides(segment):
         key = override.split("=", 1)[0].strip().lower()
         if _GIT_CONFIG_DENY.match(key):
-            return f"git -c overrides '{key}' (signing or alias configuration)"
+            return f"git -c overrides '{key}' (signing, alias or hooks configuration)"
     if subcommand == "config" and not any(arg in _GIT_CONFIG_READS for arg in args):
         for arg in args:
             if _GIT_CONFIG_DENY.match(arg.strip().lower()):
-                return f"git config changes '{arg}' (signing or alias configuration)"
+                return f"git config changes '{arg}' (signing, alias or hooks configuration)"
     if subcommand == "push":
         for arg in args:
             if arg.startswith("--force") or re.fullmatch(r"-[A-Za-z]*f[A-Za-z]*", arg) or (arg.startswith("+") and len(arg) > 1):
