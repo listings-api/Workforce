@@ -248,7 +248,7 @@ The status line shows your Claude 5-hour and weekly usage, and Codex's usage.
 
 Claude and Codex can use [Ego Lite](https://lite.ego.app/), a browser built for AI agents, to test a locally running web app, check a page or research. It is off by default, and `wf` works the same without it.
 
-1. Install Ego Lite yourself and finish its onboarding, which adds its `ego-browser` command and skill. WorkForce never installs it, imports a browser profile or changes your default browser.
+1. **Download Ego Lite from <https://lite.ego.app/>**, install it, open it once and finish its onboarding, which adds its `ego-browser` command and skill for Claude Code and Codex. The browser feature needs Ego Lite; nothing else in WorkForce does. WorkForce never downloads or installs it for you, imports a browser profile or changes your default browser.
 2. Set `browser = "ego"` in `~/.workforce/team.toml`, run `wf doctor`, and restart `wf`.
 3. Ask in plain words: "open http://localhost:3000 and check the sign-up flow".
 

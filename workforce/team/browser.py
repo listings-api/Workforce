@@ -20,11 +20,12 @@ MODES = ("off", "ego")
 CLI = "ego-browser"
 SKILL = "ego-browser"
 APP_NAME = "ego lite.app"
+SYSTEM_APP_DIRS = (Path("/Applications"),)
 APP_HELPER_GLOB = "Contents/Frameworks/*.framework/Versions/Current/Helpers/ego-browser"
 CODEX_ROLES = frozenset({"team_plan", "team_ask", "team_direct"})
 SETUP_URL = "https://lite.ego.app/"
 SETUP_STEPS = (
-    f"Install Ego Lite from {SETUP_URL} and open it once to finish its onboarding: that puts `ego-browser` on your PATH "
+    f"Download Ego Lite from {SETUP_URL}, install it and open it once to finish its onboarding: that puts `ego-browser` on your PATH "
     "and adds the `ego-browser` skill for Claude Code and Codex. Importing Chrome data and making it your default "
     "browser are optional and not needed. Check with: ego-browser nodejs -e \"console.log('ego-browser ready')\""
 )
@@ -53,7 +54,7 @@ def _home(home: Path | None) -> Path:
 
 
 def find_app(home: Path | None = None) -> Path | None:
-    for folder in (Path("/Applications"), _home(home) / "Applications"):
+    for folder in (*SYSTEM_APP_DIRS, _home(home) / "Applications"):
         if (folder / APP_NAME).is_dir():
             return folder / APP_NAME
     return None

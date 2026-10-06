@@ -6,9 +6,9 @@ WorkForce uses Ego Lite's official integration: its `ego-browser` command and it
 
 ## Set up
 
-WorkForce never installs Ego Lite, imports a browser profile or changes your default browser. You do these steps once:
+The browser feature needs Ego Lite, which you download yourself from its official site. Nothing else in WorkForce needs it. WorkForce never downloads or installs Ego Lite, imports a browser profile or changes your default browser. You do these steps once:
 
-1. Install Ego Lite from <https://lite.ego.app/>. Check that site for the platforms it supports.
+1. **Download Ego Lite from <https://lite.ego.app/>** and install it. Check that site for the platforms it supports. Use the app download there rather than an install script, so nothing runs with extra permissions.
 2. Open it once and finish its onboarding. Onboarding puts `ego-browser` on your PATH and adds the `ego-browser` skill to the agents it finds (`~/.claude/skills/ego-browser` for Claude Code, `~/.agents/skills/ego-browser` for Codex). Importing Chrome data and making Ego Lite your default browser are optional; WorkForce needs neither.
 3. Check the command works:
    ```sh
@@ -71,7 +71,7 @@ The rules tell every agent to work only in its own Space, never to list, read, u
 
 | Problem | Fix |
 | --- | --- |
-| `wf` prints "browser = "ego" in team.toml, but the `ego-browser` command was not found" | Install Ego Lite and finish its onboarding, or put `ego-browser` on your PATH. `wf` starts without the browser until then. |
+| `wf` prints "browser = "ego" in team.toml, but the `ego-browser` command was not found" | Download Ego Lite from <https://lite.ego.app/>, install it and finish its onboarding, or put `ego-browser` on your PATH. `wf` starts without the browser until then. |
 | "the `ego-browser` skill for Claude Code is missing" | Re-run Ego Lite's onboarding, or install the skill the way Ego Lite's docs describe. WorkForce looks in `~/.claude/skills/ego-browser` (or `$CLAUDE_CONFIG_DIR/skills`). |
 | "the `ego-browser` skill for Codex is missing" | Same, for Codex: WorkForce looks in `~/.agents/skills/ego-browser` and `$CODEX_HOME/skills/ego-browser`. Claude can still use the browser. |
 | `ego-browser nodejs …` fails | Make sure Ego Lite is running, then run the check command from Set up. If `ego-browser` prints an upgrade notice, decide yourself whether to run `ego-browser upgrade`; the agents are told not to. |

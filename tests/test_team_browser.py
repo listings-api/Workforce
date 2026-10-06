@@ -15,6 +15,7 @@ def home(tmp_path, monkeypatch):
     (path / ".workforce").mkdir(parents=True)
     monkeypatch.setattr(detect, "WELL_KNOWN_DIRS", ("~/.local/bin",))
     monkeypatch.setattr(detect, "_npm_global_bin", lambda environ: None)
+    monkeypatch.setattr(browser, "SYSTEM_APP_DIRS", ())
     monkeypatch.setenv("HOME", str(path))
     monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
@@ -216,7 +217,7 @@ def test_doctor_says_off_when_the_browser_is_off(home):
 def test_doctor_warns_with_setup_steps_and_never_fails(home):
     set_browser(home, "ego")
     check = doctor.check_browser(home, env_for(home))
-    assert check.status == doctor.WARN and "Install Ego Lite from https://lite.ego.app/" in check.fix
+    assert check.status == doctor.WARN and "Download Ego Lite from https://lite.ego.app/" in check.fix
 
 
 def test_doctor_is_happy_when_ego_lite_is_ready(home):
