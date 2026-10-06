@@ -82,6 +82,7 @@ TARGET_DIR_FLAGS = frozenset({"-t", "--target-directory"})
 SED_VALUE_FLAGS = frozenset({"-e", "-f", "-l", "--expression", "--file", "--line-length"})
 PROTECTED_DIRS = (".ssh", ".codex", ".claude", ".gnupg")
 PROTECTED_NAMES = (*PROTECTED_DIRS, ".claude.json")
+GRANT_SENSITIVE_DIRS = frozenset({".ssh", ".gnupg", ".aws"})
 DYNAMIC = "\x1fstdin-args"
 _PLACEHOLDERS = {";": "\ue000", "(": "\ue001", ")": "\ue002", "&": "\ue003", "|": "\ue004", ">": "\ue005", "<": "\ue006"}
 _RESTORE = {value: key for key, value in _PLACEHOLDERS.items() if key not in "<>"}
@@ -355,6 +356,15 @@ def _inside(path: str, root: str) -> bool:
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 
+def _granted(path: str, grants: Sequence[str]) -> bool:
+    """True when `path` is a file or inside a folder the user granted with `/wf-allow-outside <path>`, and is not a key or .env file."""
+    if not any(_inside(path, grant) for grant in grants):
+        return False
+    parts = Path(path).parts
+    name = parts[-1] if parts else ""
+    return not (GRANT_SENSITIVE_DIRS.intersection(parts) or name.startswith((".env", "id_")))
+
+
 def _current_branch(directory: str | None) -> str | None:
     if directory is None:
         return None
@@ -435,17 +445,29 @@ def _text_reason(command: str, where: str | None, worktree: str | None, home: Pa
 
 
 def _check_bash(
-    command: str, worktree: str | None, cwd: str | None, home: Path, mode: str = MODE_COMMITTER, allow_outside: bool = False
+    command: str,
+    worktree: str | None,
+    cwd: str | None,
+    home: Path,
+    mode: str = MODE_COMMITTER,
+    allow_outside: bool = False,
+    grants: Sequence[str] = (),
 ) -> str | None:
     where = cwd or worktree
     reason = _text_reason(command, where, worktree, home)
     if reason:
         return reason
-    return _scan(_segments(command), where, worktree, home, mode, allow_outside)
+    return _scan(_segments(command), where, worktree, home, mode, allow_outside, grants)
 
 
 def _scan(
-    segments: Sequence[Sequence[str]], where: str | None, worktree: str | None, home: Path, mode: str, allow_outside: bool = False
+    segments: Sequence[Sequence[str]],
+    where: str | None,
+    worktree: str | None,
+    home: Path,
+    mode: str,
+    allow_outside: bool = False,
+    grants: Sequence[str] = (),
 ) -> str | None:
     """Walk the command's segments. With `allow_outside`, writes anywhere pass; only `rm -rf` of the disk or the home folder is refused."""
     for segment in segments:
@@ -460,13 +482,13 @@ def _scan(
             target = args[0] if args else str(home)
             where = _resolve(target, where, home)
         elif name == "rm":
-            reason = _check_rm(args, dynamic, where, worktree, home, allow_outside)
+            reason = _check_rm(args, dynamic, where, worktree, home, allow_outside, grants)
         elif name == "git":
             reason = _check_git(words, where, home, mode)
         elif name == "find":
-            reason = _check_find(args, where, worktree, home, mode, allow_outside)
+            reason = _check_find(args, where, worktree, home, mode, allow_outside, grants)
         if not allow_outside:
-            reason = reason or _scan_writes(words, dynamic, where, worktree, home)
+            reason = reason or _scan_writes(words, dynamic, where, worktree, home, grants)
         if reason:
             return reason
     return None
@@ -498,13 +520,13 @@ def _write_path(raw: str, where: str | None, worktree: str | None, home: Path) -
     return os.path.realpath(literal or "/")
 
 
-def _write_reason(raw: str, where: str | None, worktree: str | None, home: Path) -> str | None:
+def _write_reason(raw: str, where: str | None, worktree: str | None, home: Path, grants: Sequence[str] = ()) -> str | None:
     """Why writing to `raw` is refused (outside the worktree, /tmp and $TMPDIR), or None when it is allowed."""
     for expansion in _brace_expand(raw):
         resolved = _write_path(expansion, where, worktree, home)
         if resolved is None:
             return f"write to '{raw}', a path the risk gate cannot resolve"
-        if resolved == NULL_DEVICE or any(_inside(resolved, root) for root in _temp_roots()):
+        if resolved == NULL_DEVICE or any(_inside(resolved, root) for root in _temp_roots()) or _granted(resolved, grants):
             continue
         if worktree is None:
             return f"write to '{raw}' with no known worktree"
@@ -574,39 +596,47 @@ def _command_write_targets(name: str, args: Sequence[str]) -> list[str]:
     return []
 
 
-def _scan_writes(words: Sequence[str], dynamic: bool, where: str | None, worktree: str | None, home: Path) -> str | None:
+def _scan_writes(
+    words: Sequence[str], dynamic: bool, where: str | None, worktree: str | None, home: Path, grants: Sequence[str] = ()
+) -> str | None:
     name = Path(words[0]).name
     args = words[1:]
     for target in _redirect_targets(words):
-        reason = _write_reason(target, where, worktree, home)
+        reason = _write_reason(target, where, worktree, home, grants)
         if reason:
             return reason
     targets = _command_write_targets(name, args)
     if dynamic and (targets or name in WRITE_ALL_ARGS or name in COPY_LIKE):
         return f"{name} with targets taken from standard input (xargs), which cannot be checked against the worktree"
     for target in targets:
-        reason = _write_reason(target, where, worktree, home)
+        reason = _write_reason(target, where, worktree, home, grants)
         if reason:
             return reason
     if name == "git":
-        return _git_write_reason(words, where, worktree, home)
+        return _git_write_reason(words, where, worktree, home, grants)
     return None
 
 
-def _git_write_reason(words: Sequence[str], where: str | None, worktree: str | None, home: Path) -> str | None:
+def _git_write_reason(words: Sequence[str], where: str | None, worktree: str | None, home: Path, grants: Sequence[str] = ()) -> str | None:
     if _segment_read_only(words):
         return None
     _, _, directory = _git_parts(words)
     target = _write_path(directory, where, worktree, home) if directory else where
     if target is None:
         return "git command in a directory the risk gate cannot resolve"
-    if worktree is None or _inside(target, worktree) or any(_inside(target, root) for root in _temp_roots()):
+    if worktree is None or _inside(target, worktree) or any(_inside(target, root) for root in _temp_roots()) or _granted(target, grants):
         return None
     return f"git command that changes '{directory or target}', outside the worktree"
 
 
 def _check_find(
-    args: Sequence[str], where: str | None, worktree: str | None, home: Path, mode: str, allow_outside: bool = False
+    args: Sequence[str],
+    where: str | None,
+    worktree: str | None,
+    home: Path,
+    mode: str,
+    allow_outside: bool = False,
+    grants: Sequence[str] = (),
 ) -> str | None:
     mutators = [arg for arg in args if arg in FIND_MUTATORS]
     if not mutators:
@@ -623,7 +653,7 @@ def _check_find(
         roots.append(arg)
     for root in [] if allow_outside else (roots or ["."]):
         resolved = _resolve(root, where, home)
-        if resolved is None or not _inside(resolved, worktree):
+        if resolved is None or not (_inside(resolved, worktree) or _granted(resolved, grants)):
             return f"find {mutators[0]} on '{root}' outside the worktree"
     for index, arg in enumerate(args):
         if arg in FIND_EXEC:
@@ -632,14 +662,20 @@ def _check_find(
                 if token in (";", "+"):
                     break
                 inner.append(token)
-            reason = _scan(_expand_segment(inner, False), where, worktree, home, mode, allow_outside)
+            reason = _scan(_expand_segment(inner, False), where, worktree, home, mode, allow_outside, grants)
             if reason:
                 return reason
     return None
 
 
 def _check_rm(
-    args: Sequence[str], dynamic: bool, where: str | None, worktree: str | None, home: Path, allow_outside: bool = False
+    args: Sequence[str],
+    dynamic: bool,
+    where: str | None,
+    worktree: str | None,
+    home: Path,
+    allow_outside: bool = False,
+    grants: Sequence[str] = (),
 ) -> str | None:
     recursive = any(
         arg == "--recursive" or (arg.startswith("-") and not arg.startswith("--") and re.search(r"[rR]", arg))
@@ -667,7 +703,7 @@ def _check_rm(
         return "recursive rm with no known worktree"
     for target in targets:
         resolved = _resolve(target, where, home)
-        if resolved is None or not _inside(resolved, worktree):
+        if resolved is None or not (_inside(resolved, worktree) or _granted(resolved, grants)):
             return f"recursive rm of '{target}' outside the worktree"
     return None
 
@@ -747,12 +783,14 @@ def denylist_reason(
     home: Path | None = None,
     mode: str = MODE_COMMITTER,
     allow_outside: bool = False,
+    grants: Sequence[str] = (),
 ) -> str | None:
     """Why the hard deny-list blocks this call, or None.
 
     In `agent` mode the list also refuses every git command that commits, publishes or rewrites history. With
     `allow_outside` (the user typed /wf-allow-outside) writes and deletes outside the worktree pass; credential reads, the
-    git rules and `rm -rf` of the disk or the home folder are still refused.
+    git rules and `rm -rf` of the disk or the home folder are still refused. `grants` (the user typed /wf-allow-outside <path>)
+    are files or folders outside the worktree that may be written and deleted, except key and .env files inside them.
     """
     home = Path(home) if home is not None else Path.home()
     if isinstance(tool_input, (str, list, tuple)):
@@ -767,7 +805,7 @@ def denylist_reason(
         write_paths = _patch_paths(_patch_text(tool_input) or "")
         paths = list(write_paths)
     elif command is not None:
-        reason = _check_bash(command, worktree, cwd, home, mode, allow_outside)
+        reason = _check_bash(command, worktree, cwd, home, mode, allow_outside, grants)
         if reason:
             return reason
         if "*** Begin Patch" in command:
@@ -789,7 +827,7 @@ def denylist_reason(
             if reason:
                 return reason
     for raw in [] if allow_outside else write_paths:
-        reason = _write_reason(raw, where, worktree, home)
+        reason = _write_reason(raw, where, worktree, home, grants)
         if reason:
             return reason
     return None

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sys
 import time
 import traceback
@@ -29,6 +30,7 @@ REVIEW_AGAIN_COMMANDS = ("/wf-review-again", "/workforce:wf-review-again")
 REVIEW_AGAIN_FILE = "review-again.json"
 ALLOW_OUTSIDE_COMMANDS = ("/wf-allow-outside", "/workforce:wf-allow-outside")
 ALLOW_OUTSIDE_FILE = "allow-outside.json"
+REFUSED_GRANT_DIRS = frozenset({".ssh", ".gnupg", ".aws", ".claude", ".codex", ".workforce"})
 REVIEWERS = (("claude", "the Claude reviewer (claude_review)"), ("codex", "Codex (codex_review)"))
 _GIT_WORD = re.compile(r"git|gpg|\bgh\b", re.I)
 MAX_OVERRIDES = 8
@@ -70,6 +72,16 @@ def _deny(reason: str) -> dict[str, Any]:
     }
 
 
+def _ask(reason: str) -> dict[str, Any]:
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": reason,
+        }
+    }
+
+
 def _block(reason: str) -> dict[str, Any]:
     return {"decision": "block", "reason": reason}
 
@@ -89,57 +101,125 @@ def _project_dir(payload: Mapping[str, Any], env: Mapping[str, str]) -> str:
     return root if isinstance(root, str) and root else _cwd(payload, env)
 
 
-def _outside_allowed(project: str, session_id: Any) -> bool:
-    """True when the user typed /wf-allow-outside in this very session (the marker names the session it was typed in)."""
+def _outside_grants(project: str, session_id: Any) -> tuple[bool, tuple[str, ...]]:
+    """(everything allowed, the files and folders allowed) from the user's /wf-allow-outside in this very session."""
     from workforce.team import relay
 
     if not isinstance(session_id, str) or not session_id:
-        return False
+        return False, ()
     try:
         marker = json.loads((relay.team_dir(project) / ALLOW_OUTSIDE_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
-    return isinstance(marker, dict) and marker.get("session_id") == session_id
+        return False, ()
+    if not isinstance(marker, dict) or marker.get("session_id") != session_id:
+        return False, ()
+    paths = marker.get("paths")
+    if not isinstance(paths, list):
+        return bool(marker.get("all", True)), ()
+    return bool(marker.get("all")), tuple(path for path in paths if isinstance(path, str) and os.path.isabs(path))
 
 
-def _toggle_allow_outside(project: str, session_id: Any, home: Path | None) -> str:
-    """Turn writing outside the project on or off for this session; only the user's typed command reaches here."""
+def _grant_problem(raw: str, cwd: str, home: Path) -> tuple[str | None, str | None]:
+    """(the real path to allow, None) or (None, why it cannot be allowed) for one path typed after /wf-allow-outside."""
+    from workforce.team import denylist
+
+    if re.search(r"[*?\[]", raw):
+        return None, f"{raw}: wildcards are not accepted, name one file or folder"
+    resolved = denylist._resolve(raw, cwd, home)
+    if resolved is None:
+        return None, f"{raw}: not a path WorkForce can resolve"
+    home_real = os.path.realpath(home)
+    if resolved == os.sep or denylist._inside(home_real, resolved):
+        return None, f"{raw}: that is the whole disk or your home folder"
+    if REFUSED_GRANT_DIRS.intersection(Path(resolved).parts):
+        return None, f"{raw}: that folder holds logins, keys or WorkForce's own files"
+    return resolved, None
+
+
+def _toggle_allow_outside(project: str, session_id: Any, home: Path | None, args: str = "", cwd: str | None = None) -> str:
+    """Change what Claude may write outside the project in this session; only the user's typed command reaches here."""
     from workforce.team import config, relay
 
     if not isinstance(session_id, str) or not session_id:
         return "WorkForce cannot tell which session this is, so /wf-allow-outside was not applied. Tell the user."
     try:
+        words = shlex.split(args)
+    except ValueError:
+        words = args.split()
+    grant_all, grants = _outside_grants(project, session_id)
+    try:
         marker = relay.ensure_team_dir(project) / ALLOW_OUTSIDE_FILE
-        if _outside_allowed(project, session_id):
-            marker.unlink()
-            return "WorkForce: writing outside the project folder is off again (/wf-allow-outside). Tell the user in one line."
-        config.atomic_write(marker, json.dumps({"session_id": session_id, "at": time.time()}))
+        if words == ["off"] or (not words and (grant_all or grants)):
+            marker.unlink(missing_ok=True)
+            return (
+                "WorkForce: writing outside the project folder is off again (/wf-allow-outside); Claude Code asks the user "
+                "before each such write. Tell the user in one line."
+            )
+        if not words:
+            config.atomic_write(marker, json.dumps({"session_id": session_id, "all": True, "paths": [], "at": time.time()}))
+            return (
+                "WorkForce: the user allowed writing outside the project folder for this session (/wf-allow-outside). Credential "
+                "files stay off limits. Tell the user in one line; typing /wf-allow-outside again turns it off."
+            )
+        added, refused = [], []
+        for word in words:
+            path, problem = _grant_problem(word, cwd or project, Path.home())
+            if problem:
+                refused.append(problem)
+            elif path not in grants and path not in added:
+                added.append(path)
+        if added:
+            payload = {"session_id": session_id, "all": grant_all, "paths": [*grants, *added], "at": time.time()}
+            config.atomic_write(marker, json.dumps(payload))
     except OSError as exc:
         _log_exception(home, "userpromptsubmit:allow-outside", exc)
         return f"WorkForce could not record /wf-allow-outside ({exc}). Tell the user."
-    return (
-        "WorkForce: the user allowed writing outside the project folder for this session (/wf-allow-outside). Credential "
-        "files stay off limits. Tell the user in one line; typing /wf-allow-outside again turns it off."
-    )
+    lines = []
+    if added:
+        granted = ", ".join(added)
+        lines.append(
+            f"WorkForce: for this session Claude may change files in {granted} (/wf-allow-outside); key and .env files there stay off limits."
+        )
+    if refused:
+        problems = "; ".join(refused)
+        lines.append(f"WorkForce did not allow: {problems}.")
+    lines.append("Tell the user in one line; /wf-allow-outside off turns it all off.")
+    return " ".join(lines)
 
 
 def _denylist(tool_name: str, tool_input: Mapping[str, Any], payload: Mapping[str, Any], env: Mapping[str, str]) -> dict[str, Any] | None:
-    """The hard deny-list: no credential reads, no writes outside the project folder or a temp folder, no force-push or signing bypass."""
+    """The hard deny-list: no credential reads, no force-push or signing bypass, and writes outside the project need the user."""
     from workforce.team import denylist
 
     project = _project_dir(payload, env)
-    allow_outside = _outside_allowed(project, payload.get("session_id"))
-    reason = denylist.denylist_reason(
-        tool_name, tool_input, _cwd(payload, env), project, Path.home(), mode=denylist.MODE_COMMITTER, allow_outside=allow_outside
-    )
+    grant_all, grants = _outside_grants(project, payload.get("session_id"))
+
+    def reason_for(allow_outside: bool) -> str | None:
+        return denylist.denylist_reason(
+            tool_name,
+            tool_input,
+            _cwd(payload, env),
+            project,
+            Path.home(),
+            mode=denylist.MODE_COMMITTER,
+            allow_outside=allow_outside,
+            grants=grants,
+        )
+
+    reason = reason_for(grant_all)
     if not reason:
         return None
-    if allow_outside:
+    if grant_all:
         return _deny(f"WorkForce blocked this: {reason}. Even with /wf-allow-outside, credential files and a delete of the whole disk or home folder stay off limits.")
+    if payload.get("permission_mode") == "default" and not reason_for(True):
+        return _ask(
+            f"WorkForce: {reason}. This changes files outside the project folder; allow it only if you asked for it. "
+            "/wf-allow-outside <folder> allows a folder for this session without asking."
+        )
     return _deny(
         f"WorkForce blocked this: {reason}. Claude never reads credential files, and changes files only inside the "
         f"project folder ({project}) or a temp folder. If this step is needed, the user does it by hand, or types "
-        "/wf-allow-outside to allow writes outside the project for this session."
+        "/wf-allow-outside <folder> to allow that folder (or /wf-allow-outside alone for everything) for this session."
     )
 
 
@@ -540,7 +620,8 @@ def evaluate(
         if first in REVIEW_AGAIN_COMMANDS:
             return _context(_allow_more_reviews(_cwd(payload, env), home))
         if first in ALLOW_OUTSIDE_COMMANDS:
-            return _context(_toggle_allow_outside(_project_dir(payload, env), payload.get("session_id"), home))
+            rest = prompt.strip().split(None, 1)[1] if len(prompt.strip().split(None, 1)) > 1 else ""
+            return _context(_toggle_allow_outside(_project_dir(payload, env), payload.get("session_id"), home, rest, _cwd(payload, env)))
         direct = _direct_codex(payload, env, home, now)
         if direct:
             return direct

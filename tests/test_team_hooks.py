@@ -371,8 +371,10 @@ def user_types(text, cwd, home, session="s1"):
     return hooks.evaluate("userpromptsubmit", payload, env={"CLAUDE_PROJECT_DIR": str(cwd)}, home=home, now=NOW)
 
 
-def tool_call(tool_name, tool_input, cwd, home, session="s1"):
+def tool_call(tool_name, tool_input, cwd, home, session="s1", mode=None):
     payload = {"tool_name": tool_name, "tool_input": tool_input, "cwd": str(cwd), "session_id": session}
+    if mode:
+        payload["permission_mode"] = mode
     return hooks.evaluate("pretooluse", payload, env={"CLAUDE_PROJECT_DIR": str(cwd)}, home=home, now=NOW)
 
 
@@ -426,6 +428,112 @@ def test_claude_cannot_write_the_marker_itself(git_repo, home):
         assert "/wf-allow-outside" in denied(tool_call("Bash", {"command": command}, git_repo, home))
     script = git_repo / "grant.py"
     assert "allow-outside" in denied(tool_call("Write", {"file_path": str(script), "content": "open('.workforce/team/allow-outside.json', 'w').write('{}')\n"}, git_repo, home))
+
+
+def asked(output):
+    assert output and output["hookSpecificOutput"]["permissionDecision"] == "ask"
+    return output["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_in_the_normal_mode_a_write_outside_the_project_asks_the_user(git_repo, home):
+    reason = asked(tool_call(*OUTSIDE_WRITE, git_repo, home, mode="default"))
+    assert "/opt/wf-outside/notes.txt" in reason and "only if you asked for it" in reason
+    for command in ("rm -rf /opt/wf-outside", "cp README.md /opt/wf-outside/", "echo x > /opt/wf-outside/notes.txt"):
+        assert asked(tool_call("Bash", {"command": command}, git_repo, home, mode="default")), command
+
+
+@pytest.mark.parametrize("mode", [None, "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"])
+def test_other_modes_keep_refusing_because_the_prompt_may_never_reach_the_user(git_repo, home, mode):
+    assert "outside" in denied(tool_call(*OUTSIDE_WRITE, git_repo, home, mode=mode))
+
+
+def test_asking_never_replaces_the_hard_refusals(git_repo, home):
+    assert "auth.json" in denied(tool_call("Bash", {"command": "cat ~/.codex/auth.json"}, git_repo, home, mode="default"))
+    assert "credentials" in denied(tool_call("Read", {"file_path": "~/.claude/.credentials.json"}, git_repo, home, mode="default"))
+    assert "force" in denied(tool_call("Bash", {"command": "git push --force origin main"}, git_repo, home, mode="default"))
+    for command in ("rm -rf /", "rm -rf ~"):
+        assert denied(tool_call("Bash", {"command": command}, git_repo, home, mode="default")), command
+
+
+def granted_context(text, git_repo, home, session="s1"):
+    return user_types(text, git_repo, home, session=session)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_the_user_can_allow_one_folder(git_repo, home):
+    assert "/opt/wf-granted" in granted_context("/wf-allow-outside /opt/wf-granted", git_repo, home)
+    for tool_input in (
+        ("Write", {"file_path": "/opt/wf-granted/report.md", "content": "x"}),
+        ("Bash", {"command": "echo x > /opt/wf-granted/sub/notes.txt"}),
+        ("Bash", {"command": "rm -rf /opt/wf-granted/old"}),
+        ("Bash", {"command": "rm -rf /opt/wf-granted"}),
+        ("Bash", {"command": "find /opt/wf-granted -name '*.tmp' -delete"}),
+    ):
+        assert tool_call(*tool_input, git_repo, home) is None, tool_input
+    assert "outside" in denied(tool_call("Write", {"file_path": "/opt/wf-granted-not/x", "content": "x"}, git_repo, home))
+    assert "outside" in denied(tool_call("Bash", {"command": "rm -rf /opt"}, git_repo, home))
+    assert "outside" in denied(tool_call(*OUTSIDE_WRITE, git_repo, home))
+
+
+def test_a_file_grant_covers_only_that_file(git_repo, home):
+    granted_context("/wf-allow-outside /opt/wf-file/notes.txt", git_repo, home)
+    assert tool_call("Write", {"file_path": "/opt/wf-file/notes.txt", "content": "x"}, git_repo, home) is None
+    assert "outside" in denied(tool_call("Write", {"file_path": "/opt/wf-file/other.txt", "content": "x"}, git_repo, home))
+
+
+def test_key_and_env_files_inside_a_granted_folder_stay_off_limits(git_repo, home):
+    granted_context("/wf-allow-outside /opt/wf-granted", git_repo, home)
+    for path in ("/opt/wf-granted/.env", "/opt/wf-granted/.env.local", "/opt/wf-granted/id_ed25519", "/opt/wf-granted/.aws/config", "/opt/wf-granted/x/.ssh/k"):
+        assert denied(tool_call("Write", {"file_path": path, "content": "x"}, git_repo, home)), path
+
+
+def test_links_and_dot_dots_are_followed_before_granting(git_repo, home, tmp_path):
+    link = tmp_path / "shortcut"
+    link.symlink_to("/opt/wf-real-target")
+    context = granted_context(f"/wf-allow-outside {link} /opt/wf-a/../wf-b", git_repo, home)
+    assert "/opt/wf-real-target" in context and "/opt/wf-b" in context and ".." not in context
+    assert tool_call("Write", {"file_path": "/opt/wf-real-target/x", "content": "x"}, git_repo, home) is None
+    assert tool_call("Write", {"file_path": "/opt/wf-b/x", "content": "x"}, git_repo, home) is None
+    assert denied(tool_call("Write", {"file_path": "/opt/wf-a/x", "content": "x"}, git_repo, home))
+
+
+@pytest.mark.parametrize(
+    "path, needle",
+    [
+        ("/", "whole disk or your home folder"),
+        ("~", "whole disk or your home folder"),
+        ("~/..", "whole disk or your home folder"),
+        ("~/.ssh", "logins, keys"),
+        ("~/.workforce/plugin", "logins, keys"),
+        ("~/.claude", "logins, keys"),
+        ("/opt/wf-*", "wildcards"),
+    ],
+)
+def test_some_folders_can_never_be_granted(git_repo, home, path, needle):
+    context = granted_context(f"/wf-allow-outside {path}", git_repo, home)
+    assert "did not allow" in context and needle in context
+    assert not (git_repo / ".workforce" / "team" / "allow-outside.json").exists()
+
+
+def test_off_or_the_bare_command_clears_folder_grants(git_repo, home):
+    granted_context("/wf-allow-outside /opt/wf-granted", git_repo, home)
+    assert "off again" in granted_context("/wf-allow-outside off", git_repo, home)
+    assert denied(tool_call("Write", {"file_path": "/opt/wf-granted/x", "content": "x"}, git_repo, home))
+    granted_context("/wf-allow-outside /opt/wf-granted", git_repo, home)
+    assert "off again" in granted_context("/wf-allow-outside", git_repo, home)
+    assert denied(tool_call("Write", {"file_path": "/opt/wf-granted/x", "content": "x"}, git_repo, home))
+
+
+def test_folder_grants_are_bound_to_the_session_that_typed_them(git_repo, home):
+    granted_context("/wf-allow-outside /opt/wf-granted", git_repo, home, session="s1")
+    assert denied(tool_call("Write", {"file_path": "/opt/wf-granted/x", "content": "x"}, git_repo, home, session="s2"))
+    assert tool_call("Write", {"file_path": "/opt/wf-granted/x", "content": "x"}, git_repo, home, session="s1") is None
+
+
+def test_a_marker_from_the_earlier_version_still_means_everything(git_repo, home):
+    folder = git_repo / ".workforce" / "team"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "allow-outside.json").write_text(json.dumps({"session_id": "s1", "at": 1}))
+    assert tool_call(*OUTSIDE_WRITE, git_repo, home) is None
 
 
 def test_the_plugin_has_the_command():
