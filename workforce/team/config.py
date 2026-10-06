@@ -32,8 +32,10 @@ DEFAULTS = {
     "reviewer_effort": "high",
     "fast_coder_model": "claude-sonnet-5-5",
     "fast_coder_effort": "high",
+    "browser": "off",
 }
 CODEX_MODES = ("read-only", "write")
+BROWSER_MODES = ("off", "ego")
 _CLAUDE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]*")
 
 
@@ -50,6 +52,7 @@ class TeamConfig:
     reviewer_effort: str = DEFAULTS["reviewer_effort"]
     fast_coder_model: str = DEFAULTS["fast_coder_model"]
     fast_coder_effort: str = DEFAULTS["fast_coder_effort"]
+    browser: str = DEFAULTS["browser"]
 
 
 def workforce_dir(home: Path | None = None) -> Path:
@@ -121,7 +124,7 @@ def _validate_claude_effort(effort: str) -> str:
 
 def _from_table(table: dict, path: Path) -> TeamConfig:
     values = {**DEFAULTS, **table}
-    for key in ("claude", "codex", "codex_model", "codex_effort", "codex_mode", "reviewer_model", "reviewer_effort", "fast_coder_model", "fast_coder_effort"):
+    for key in ("claude", "codex", "codex_model", "codex_effort", "codex_mode", "reviewer_model", "reviewer_effort", "fast_coder_model", "fast_coder_effort", "browser"):
         if not isinstance(values[key], str) or not values[key].strip():
             raise ConfigError(f"{path}: {key} must be a non-empty string")
     for key in ("alert_percent", "stop_percent"):
@@ -130,6 +133,8 @@ def _from_table(table: dict, path: Path) -> TeamConfig:
     _validate_effort(values["codex_effort"])
     try:
         _validate_mode(values["codex_mode"])
+        if values["browser"] not in BROWSER_MODES:
+            raise ConfigError(f"browser must be one of {', '.join(BROWSER_MODES)}, got {values['browser']!r}")
         for role in ("reviewer", "fast_coder"):
             _validate_claude_model(values[f"{role}_model"])
             _validate_claude_effort(values[f"{role}_effort"])

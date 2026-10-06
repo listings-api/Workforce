@@ -64,6 +64,26 @@ def banner_wanted(args: Sequence[str], stream) -> bool:
     return bool(isatty and isatty())
 
 
+def _browser_text(cfg, environ: Mapping[str, str], home: Path | None) -> str:
+    """Claude's browser rules when `browser = "ego"` and Ego Lite is ready; otherwise nothing, with a note saying what is missing."""
+    if getattr(cfg, "browser", "off") != "ego":
+        return ""
+    from workforce.team import browser
+
+    try:
+        state = browser.status(cfg.browser, environ, home)
+    except OSError as exc:
+        print(f"! browser = \"ego\" in team.toml, but Ego Lite could not be checked ({exc}); starting without the browser.", file=sys.stderr)
+        return ""
+    if state.problems:
+        print(f"! browser = \"ego\" in team.toml, but {'; '.join(state.problems)}.", file=sys.stderr)
+        print(f"  {browser.SETUP_STEPS}", file=sys.stderr)
+    if not state.claude_ready:
+        print("  Starting without the browser. `wf doctor` shows the browser check.", file=sys.stderr)
+        return ""
+    return browser.claude_text(Path.cwd(), state.cli)
+
+
 def _error(message: str) -> int:
     print(f"✗ {message}", file=sys.stderr)
     return EXIT_PREFLIGHT
@@ -200,7 +220,7 @@ def main(
     except OSError as exc:
         return _error(f"could not write the WorkForce plugin to {plugin_runtime.prepared_dir(home)} ({exc}).")
     python = sys.executable
-    team_text = (plugin / TEAM_FILE).read_text(encoding="utf-8")
+    team_text = (plugin / TEAM_FILE).read_text(encoding="utf-8") + _browser_text(cfg, environ, home)
     stream = stdout if stdout is not None else sys.stdout
     if banner_wanted(args, stream):
         try:

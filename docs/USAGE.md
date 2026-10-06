@@ -1,6 +1,6 @@
 # WorkForce: usage guide
 
-This guide covers `wf` in detail: how the team works, every slash command, talking to Codex word for word, the settings and the usage limits. For install and a quick start, see the [README](../README.md).
+This guide covers `wf` in detail: how the team works, every slash command, talking to Codex word for word, the settings and the usage limits. For install and a quick start, see the [README](../README.md). For the optional Ego Lite browser, see [BROWSER.md](BROWSER.md).
 
 WorkForce only runs as a chat. `wf -p` / `wf --print`, and the unattended `wf run` pipeline of earlier versions, were removed.
 

@@ -47,11 +47,12 @@ wf demo                                                             # 3. a sampl
 8. [Commits and the review gate](#8-commits-and-the-review-gate)
 9. [Big tasks: `/plan-loop`](#9-big-tasks-plan-loop)
 10. [Usage limits](#10-usage-limits)
-11. [All commands](#11-all-commands)
-12. [Where things are stored](#12-where-things-are-stored)
-13. [Troubleshooting](#13-troubleshooting)
-14. [Update or uninstall](#14-update-or-uninstall)
-15. [License](#license)
+11. [Optional: a browser (Ego Lite)](#11-optional-a-browser-ego-lite)
+12. [All commands](#12-all-commands)
+13. [Where things are stored](#13-where-things-are-stored)
+14. [Troubleshooting](#14-troubleshooting)
+15. [Update or uninstall](#15-update-or-uninstall)
+16. [License](#license)
 
 ---
 
@@ -243,7 +244,17 @@ The status line shows your Claude 5-hour and weekly usage, and Codex's usage.
 - `@codex` only checks the Codex windows.
 - Change the thresholds with `alert_percent` and `stop_percent` in `~/.workforce/team.toml`.
 
-## 11. All commands
+## 11. Optional: a browser (Ego Lite)
+
+Claude and Codex can use [Ego Lite](https://lite.ego.app/), a browser built for AI agents, to test a locally running web app, check a page or research. It is off by default, and `wf` works the same without it.
+
+1. Install Ego Lite yourself and finish its onboarding, which adds its `ego-browser` command and skill. WorkForce never installs it, imports a browser profile or changes your default browser.
+2. Set `browser = "ego"` in `~/.workforce/team.toml`, run `wf doctor`, and restart `wf`.
+3. Ask in plain words: "open http://localhost:3000 and check the sign-up flow".
+
+Each agent works in its own Ego Lite Space and never touches your tabs. Browsing never counts as a review and never authorizes sending messages, publishing, purchases or account changes. Codex keeps its sandbox. Setup, examples, troubleshooting and limitations: [docs/BROWSER.md](docs/BROWSER.md).
+
+## 12. All commands
 
 | Command | What it does |
 |---|---|
@@ -265,7 +276,7 @@ The status line shows your Claude 5-hour and weekly usage, and Codex's usage.
 
 The plugin commands also work with a prefix, for example `/workforce:codex-model`, if a name clashes with another plugin.
 
-## 12. Where things are stored
+## 13. Where things are stored
 
 | Path | What it is |
 |---|---|
@@ -278,7 +289,7 @@ The plugin commands also work with a prefix, for example `/workforce:codex-model
 | `<project>/.workforce/team/` | Codex's plans, reviews and replies, word for word; the `@codex` thread; `/plan-loop` plans. It's excluded from git automatically, so it never shows up in `git status`. |
 | `<repo's .git>/wf-approvals.json` | The signed review approvals, per repo. Never committed. |
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 | Problem | Fix |
 |---|---|
@@ -294,7 +305,7 @@ The plugin commands also work with a prefix, for example `/workforce:codex-model
 
 Claude Code's own header (the Claude logo and version) still shows under the WF banner. Claude Code has no setting to hide it.
 
-## 14. Update or uninstall
+## 15. Update or uninstall
 
 ```sh
 uv tool upgrade workforce          # update (pipx: pipx upgrade workforce)

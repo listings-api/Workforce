@@ -343,8 +343,9 @@ class Server:
         cfg = self._cfg()
         model, effort = _codex_settings(cfg, args)
         context = _string_arg(args, "context")
-        prompt = prompts.render("team_codex_plan", task=task, context=context or "(none)")
-        result = self._run_codex(cfg, "team_plan", prompt, model, effort, cwd=self._repo(args))
+        repo = self._repo(args)
+        prompt = prompts.render("team_codex_plan", task=task, context=context or "(none)") + relay.browser_note(cfg, repo, "team_plan")
+        result = self._run_codex(cfg, "team_plan", prompt, model, effort, cwd=repo)
         self._remember_session(result, model, effort)
         saved, note = self._save("plan", {"task": task, "context": context}, prompt, result, cfg, model, effort)
         return _text(f"{relay.truncate_reply(result.text, saved)}\n\n[codex session_id: {result.session_id}]\n{note}")
@@ -354,7 +355,7 @@ class Server:
         session_id = _string_arg(args, "session_id")
         cfg = self._cfg()
         model, effort = _codex_settings(cfg, args)
-        prompt = prompts.render("team_codex_ask", message=message)
+        prompt = prompts.render("team_codex_ask", message=message) + relay.browser_note(cfg, self.cwd(), "team_ask")
         result = self._run_codex(cfg, "team_ask", prompt, model, effort, resume_session=session_id)
         self._remember_session(result, model, effort)
         saved, note = self._save("ask", {"message": message, "session_id": session_id}, prompt, result, cfg, model, effort)
@@ -633,10 +634,26 @@ class Server:
             f"Usage limits alert at {cfg.alert_percent}% · stop at {cfg.stop_percent}%",
             f"             change: edit alert_percent / stop_percent in {config.config_path(self.home)}",
             f"             carry on past a stop: /wf-continue",
+            f"Browser      {_browser_line(cfg)}",
+            f"             change: set browser = \"ego\" or \"off\" in {config.config_path(self.home)}, then restart `wf`",
             f"Usage now    {state['text']}" + (f"  ({problem})" if problem else ""),
             f"             details: /usage",
         ]
         return _text("\n".join(lines))
+
+
+def _browser_line(cfg: config.TeamConfig) -> str:
+    from workforce.team import browser
+
+    if cfg.browser != "ego":
+        return "off (Ego Lite is optional)"
+    try:
+        state = browser.status(cfg.browser)
+    except OSError as exc:
+        return f"ego · could not check Ego Lite ({exc})"
+    if not state.problems:
+        return "ego · Ego Lite ready for Claude and Codex"
+    return "ego · not ready: " + "; ".join(state.problems) + " (see `wf doctor`)"
 
 
 class _Call:

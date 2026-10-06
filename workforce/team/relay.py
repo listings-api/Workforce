@@ -127,6 +127,19 @@ def sandbox_for(cfg: config.TeamConfig, kind: str) -> str:
     return "workspace-write" if kind == "ask" and cfg.codex_mode == "write" else "read-only"
 
 
+def browser_note(cfg: config.TeamConfig, project: Path | str, role: str) -> str:
+    """The Ego Lite note for a Codex prompt: only with `browser = "ego"`, only for roles that may browse, only when it is installed."""
+    from workforce.team import browser
+
+    if getattr(cfg, "browser", "off") != "ego" or role not in browser.CODEX_ROLES:
+        return ""
+    try:
+        state = browser.status(cfg.browser)
+    except OSError:
+        return ""
+    return browser.codex_text(project, state.cli, role) if state.codex_ready else ""
+
+
 def run_codex(
     cfg: config.TeamConfig,
     project: Path,
@@ -327,7 +340,7 @@ def direct_codex(cfg: config.TeamConfig, project: Path | str, text: str) -> str:
     sandbox = sandbox_for(cfg, "ask")
     try:
         result = run_codex(
-            cfg, project, "team_direct", text, cfg.codex_model, cfg.codex_effort,
+            cfg, project, "team_direct", text + browser_note(cfg, project, "team_direct"), cfg.codex_model, cfg.codex_effort,
             sandbox=sandbox, timeout_s=DIRECT_TIMEOUT_S, resume_session=resume,
         )
     except WorkforceError as exc:

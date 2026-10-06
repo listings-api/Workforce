@@ -233,6 +233,22 @@ def check_optional(
     return checks
 
 
+def check_browser(home: Path | None, environ: Mapping[str, str]) -> Check:
+    """Ego Lite, only when `browser = "ego"` in team.toml; it is optional, so a gap is a warning, never a failure."""
+    from workforce.team import browser
+
+    try:
+        mode = tomllib.loads(config.config_path(home).read_text(encoding="utf-8")).get("browser", "off")
+    except (OSError, tomllib.TOMLDecodeError):
+        mode = "off"
+    if mode != "ego":
+        return Check("browser (optional)", OK, 'browser: off (to use Ego Lite, set browser = "ego" in team.toml)')
+    state = browser.status(mode, environ, home)
+    if state.problems:
+        return Check("browser (optional)", WARN, "browser: " + "; ".join(state.problems), browser.SETUP_STEPS)
+    return Check("browser (optional)", OK, f"browser: Ego Lite ready ({state.cli})")
+
+
 def run_checks(
     home: Path | None = None,
     environ: Mapping[str, str] | None = None,
@@ -248,6 +264,7 @@ def run_checks(
     codex_binary, _ = _resolve("codex", environ, home)
     codex_ready = all(check.status != FAIL for check in codex_checks)
     checks += check_optional(codex_binary, codex_ready, home, models_probe)
+    checks.append(check_browser(home, environ))
     return checks
 
 
